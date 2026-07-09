@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import '../4. home/home_and_alert_center.dart';
+import '../services/auth_api.dart';
+import '../services/session_store.dart';
 
 const Color _bg = Color(0xFFFBF6EE);
 const Color _brown = Color(0xFF936249);
@@ -21,6 +23,11 @@ class FirstRegistrationFlow extends StatefulWidget {
 class _FirstRegistrationFlowState extends State<FirstRegistrationFlow> {
   int _page = 0;
   final _inviteCode = '7M92A4';
+
+  final _api = AuthApi();
+  bool _busy = false;
+  String _busyMsg = '';
+  String? _onboardingToken; // Face ID 등록 후 발급, 번호 연결에 사용
 
   void _next() {
     if (_page < 4) {
@@ -43,11 +50,125 @@ class _FirstRegistrationFlowState extends State<FirstRegistrationFlow> {
     );
   }
 
+  void _setBusy(bool busy, [String msg = '']) {
+    if (!mounted) return;
+    setState(() {
+      _busy = busy;
+      _busyMsg = msg;
+    });
+  }
+
+  void _snack(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg), behavior: SnackBarBehavior.floating),
+    );
+  }
+
+  /// 1단계: "Face ID로 시작하기" → 번호 없이 패스키 먼저 등록(생체인증).
+  /// 성공하면 onboardingToken 저장 후 보호자 정보(전화번호) 페이지로.
+  Future<void> _onFaceIdStart() async {
+    if (_busy) return;
+    try {
+      _setBusy(true, 'Face ID로 패스키 등록 중…\n생체인증을 진행하세요');
+      _onboardingToken = await _api.registerPasskeyFirst(displayName: '보호자');
+      _setBusy(false);
+      _snack('패스키(Face ID) 등록 완료! 전화번호를 인증해 주세요.');
+      _next();
+    } catch (e) {
+      _setBusy(false);
+      _snack('Face ID 등록 실패: $e');
+    }
+  }
+
+  /// 2단계: 보호자 정보(전화번호) → 인증번호 발송·확인 → 패스키 계정에 번호 연결.
+  /// 성공하면 세션 저장(자동 로그인) 후 다음 페이지로.
+  Future<void> _onGuardianNext(String phone) async {
+    if (_busy) return;
+    if (_onboardingToken == null) {
+      _snack('먼저 Face ID 등록을 완료해 주세요.');
+      return;
+    }
+    if (phone.trim().length < 9) {
+      _snack('전화번호를 확인해 주세요.');
+      return;
+    }
+    try {
+      _setBusy(true, '인증번호 발송 중…');
+      await _api.sendCode(phone);
+      _setBusy(false);
+
+      final code = await _promptOtp(phone);
+      if (code == null || code.trim().isEmpty) return; // 취소
+
+      _setBusy(true, '인증번호 확인 중…');
+      final result = await _api.attachPhone(
+        onboardingToken: _onboardingToken!,
+        phone: phone,
+        code: code.trim(),
+      );
+      await SessionStore.saveSession(
+        accessToken: result.accessToken,
+        refreshToken: result.refreshToken,
+        protectorId: result.protectorId,
+      );
+      _setBusy(false);
+      _snack('전화번호 인증 완료! 가입이 끝났어요.');
+      _next();
+    } catch (e) {
+      _setBusy(false);
+      _snack('실패: $e');
+    }
+  }
+
+  /// 인증번호 입력 다이얼로그. mock SMS는 서버 로그/────/dev 엔드포인트로 확인.
+  Future<String?> _promptOtp(String phone) {
+    final controller = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Colors.white,
+        title: const Text('인증번호 입력', style: TextStyle(fontWeight: FontWeight.w900)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('$phone 로 보낸 6자리 번호를 입력하세요.',
+                style: const TextStyle(fontSize: 12, color: _muted)),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              keyboardType: TextInputType.number,
+              maxLength: 6,
+              autofocus: true,
+              decoration: const InputDecoration(
+                counterText: '',
+                hintText: '000000',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('취소', style: TextStyle(color: _muted)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, controller.text),
+            child: const Text('확인', style: TextStyle(color: _brown, fontWeight: FontWeight.w800)),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final pages = [
-      _FaceSignupPage(onNext: _next),
-      _GuardianInfoPage(onBack: _back, onNext: _next),
+      _FaceSignupPage(onNext: _onFaceIdStart),
+      _GuardianInfoPage(onBack: _back, onNext: _onGuardianNext),
       _PatientInfoPage(onBack: _back, onNext: _next),
       _FamilyConnectPage(onBack: _back, onNext: _next),
       _InviteCodeCreatePage(
@@ -59,9 +180,37 @@ class _FirstRegistrationFlowState extends State<FirstRegistrationFlow> {
 
     return Scaffold(
       backgroundColor: _bg,
-      body: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 220),
-        child: pages[_page],
+      body: Stack(
+        children: [
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 220),
+            child: pages[_page],
+          ),
+          if (_busy)
+            Container(
+              color: Colors.black.withValues(alpha: 0.35),
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const CircularProgressIndicator(color: Colors.white),
+                    if (_busyMsg.isNotEmpty) ...[
+                      SizedBox(height: 16.h),
+                      Text(
+                        _busyMsg,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 12.sp,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -131,7 +280,7 @@ class _PhoneScreen extends StatelessWidget {
 class _FaceSignupPage extends StatelessWidget {
   const _FaceSignupPage({required this.onNext});
 
-  final VoidCallback onNext;
+  final Future<void> Function() onNext;
 
   @override
   Widget build(BuildContext context) {
@@ -139,7 +288,7 @@ class _FaceSignupPage extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(height: 106.h),
+          SizedBox(height: 40.h),
           Text(
             '비밀번호 없이\n한 번만 기억해요',
             style: _titleStyle(),
@@ -177,7 +326,7 @@ class _GuardianInfoPage extends StatefulWidget {
   const _GuardianInfoPage({required this.onBack, required this.onNext});
 
   final VoidCallback onBack;
-  final VoidCallback onNext;
+  final Future<void> Function(String phone) onNext;
 
   @override
   State<_GuardianInfoPage> createState() => _GuardianInfoPageState();
@@ -231,7 +380,10 @@ class _GuardianInfoPageState extends State<_GuardianInfoPage> {
             }).toList(),
           ),
           const Spacer(),
-          _BottomButton(text: '다음으로', onTap: widget.onNext),
+          _BottomButton(
+            text: '인증하고 계속하기',
+            onTap: () => widget.onNext(_phoneController.text),
+          ),
           SizedBox(height: 18.h),
         ],
       ),

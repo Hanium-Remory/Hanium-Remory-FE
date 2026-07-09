@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import '../2. pastkey/signup_method_screen.dart';
+import '../services/session_store.dart';
 
 class OnboardingScreen extends StatefulWidget {
   const OnboardingScreen({super.key});
@@ -37,6 +38,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   ];
 
   void startRegistration() {
+    SessionStore.setSeenOnboarding(); // 이후 실행부터 온보딩 스킵
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(builder: (_) => const SignupMethodScreen()),
@@ -69,111 +71,120 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFFBF6EE),
       body: SafeArea(
-        child: PageView.builder(
-          controller: pageController,
-          itemCount: pages.length,
-          onPageChanged: (index) {
-            setState(() {
-              currentPage = index;
-            });
-          },
-          itemBuilder: (context, index) {
-            return Padding(
-              padding: EdgeInsets.symmetric(horizontal: 34.w),
-              child: Column(
-                children: [
-                  SizedBox(height: 28.h),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: GestureDetector(
-                      onTap: skipOnboarding,
-                      child: Text(
-                        '건너뛰기',
-                        style: TextStyle(
-                          fontSize: 11.sp,
-                          color: const Color(0xFF6D5A50),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const Spacer(),
-                  CircleAvatar(
-                    radius: 34.r,
-                    backgroundColor: const Color(0xFFF1DED4),
-                    child: Icon(
-                      pages[index].icon,
-                      size: 40.sp,
-                      color: const Color(0xFF936249),
-                    ),
-                  ),
-                  SizedBox(height: 22.h),
-                  Text(
-                    pages[index].title,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 22.sp,
-                      fontWeight: FontWeight.w800,
-                      color: const Color(0xFF2F2521),
-                      height: 1.25,
-                    ),
-                  ),
-                  SizedBox(height: 10.h),
-                  Text(
-                    pages[index].subtitle,
-                    textAlign: TextAlign.center,
+        child: Padding(
+          padding: EdgeInsets.symmetric(horizontal: 34.w),
+          child: Column(
+            children: [
+              SizedBox(height: 28.h),
+              // 건너뛰기 — 고정
+              Align(
+                alignment: Alignment.centerRight,
+                child: GestureDetector(
+                  onTap: skipOnboarding,
+                  child: Text(
+                    '건너뛰기',
                     style: TextStyle(
                       fontSize: 11.sp,
                       color: const Color(0xFF6D5A50),
-                      height: 1.5,
                     ),
                   ),
-                  const Spacer(),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: List.generate(
-                      pages.length,
-                      (dotIndex) => AnimatedContainer(
-                        duration: const Duration(milliseconds: 250),
-                        margin: EdgeInsets.symmetric(horizontal: 3.w),
-                        width: currentPage == dotIndex ? 14.w : 5.w,
-                        height: 4.h,
-                        decoration: BoxDecoration(
-                          color: currentPage == dotIndex
-                              ? const Color(0xFF936249)
-                              : const Color(0xFFD8C5BA),
-                          borderRadius: BorderRadius.circular(10.r),
-                        ),
-                      ),
-                    ),
-                  ),
-                  SizedBox(height: 16.h),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 42.h,
-                    child: ElevatedButton(
-                      onPressed: nextPage,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF936249),
-                        foregroundColor: Colors.white,
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8.r),
-                        ),
-                      ),
-                      child: Text(
-                        pages[index].buttonText,
-                        style: TextStyle(
-                          fontSize: 13.sp,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ),
-                  SizedBox(height: 24.h),
-                ],
+                ),
               ),
-            );
-          },
+              // 슬라이드되는 내용(아이콘/제목/부제)만 PageView
+              Expanded(
+                child: PageView.builder(
+                  controller: pageController,
+                  itemCount: pages.length,
+                  onPageChanged: (index) {
+                    setState(() {
+                      currentPage = index;
+                    });
+                  },
+                  itemBuilder: (context, index) {
+                    return Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        CircleAvatar(
+                          radius: 34.r,
+                          backgroundColor: const Color(0xFFF1DED4),
+                          child: Icon(
+                            pages[index].icon,
+                            size: 40.sp,
+                            color: const Color(0xFF936249),
+                          ),
+                        ),
+                        SizedBox(height: 22.h),
+                        Text(
+                          pages[index].title,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 22.sp,
+                            fontWeight: FontWeight.w800,
+                            color: const Color(0xFF2F2521),
+                            height: 1.25,
+                          ),
+                        ),
+                        SizedBox(height: 10.h),
+                        Text(
+                          pages[index].subtitle,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 11.sp,
+                            color: const Color(0xFF6D5A50),
+                            height: 1.5,
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+              // 인디케이터 — 고정
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(
+                  pages.length,
+                  (dotIndex) => AnimatedContainer(
+                    duration: const Duration(milliseconds: 250),
+                    margin: EdgeInsets.symmetric(horizontal: 3.w),
+                    width: currentPage == dotIndex ? 14.w : 5.w,
+                    height: 4.h,
+                    decoration: BoxDecoration(
+                      color: currentPage == dotIndex
+                          ? const Color(0xFF936249)
+                          : const Color(0xFFD8C5BA),
+                      borderRadius: BorderRadius.circular(10.r),
+                    ),
+                  ),
+                ),
+              ),
+              SizedBox(height: 16.h),
+              // 버튼 — 고정 (텍스트만 현재 페이지에 따라 바뀜)
+              SizedBox(
+                width: double.infinity,
+                height: 42.h,
+                child: ElevatedButton(
+                  onPressed: nextPage,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF936249),
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8.r),
+                    ),
+                  ),
+                  child: Text(
+                    pages[currentPage].buttonText,
+                    style: TextStyle(
+                      fontSize: 13.sp,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+              SizedBox(height: 24.h),
+            ],
+          ),
         ),
       ),
     );
