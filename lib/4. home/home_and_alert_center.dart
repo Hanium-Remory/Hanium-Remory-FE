@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import '../5. memory/memory_add_flow.dart';
+import '../6. chat/family_chat_screen.dart';
+import '../7. report/daily_report_screen.dart';
 import '../8. vocie/voice_record_flow.dart';
+import '../9. set/settings_flow.dart';
 
 const Color _bg = Color(0xFFFBF6EE);
 const Color _brown = Color(0xFF936249);
@@ -97,7 +100,7 @@ class HomeScreen extends StatelessWidget {
                   ),
                   SizedBox(height: 10.h),
                   Row(
-                    children: const [
+                    children: [
                       Expanded(
                         child: _QuickTile(
                           title: '가족 대화',
@@ -106,9 +109,17 @@ class HomeScreen extends StatelessWidget {
                           color: Colors.white,
                           textColor: _dark,
                           badge: '3',
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const FamilyChatScreen(),
+                              ),
+                            );
+                          },
                         ),
                       ),
-                      SizedBox(width: 10),
+                      const SizedBox(width: 10),
                       Expanded(
                         child: _QuickTile(
                           title: '오늘의 리포트',
@@ -116,6 +127,14 @@ class HomeScreen extends StatelessWidget {
                           icon: Icons.show_chart,
                           color: Colors.white,
                           textColor: _dark,
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const DailyReportScreen(),
+                              ),
+                            );
+                          },
                         ),
                       ),
                     ],
@@ -187,13 +206,19 @@ class _AlertCenterScreenState extends State<AlertCenterScreen> {
         action: '바로 전화하기',
         urgent: true,
       ),
-      const _AlertCard(
+      _AlertCard(
         icon: Icons.show_chart,
         label: '리포트',
-        title: '어머님의 어제 하루',
-        body: '대화 5번, 대부분 감정 좋음, 활동량 보통',
+        title: '오늘의 데일리 리포트가 준비됐어요',
+        body: '대화 5번, 활동도 72%, 감정 흐름이 평온하게 유지되었어요.',
         action: '리포트 열어보기',
         warm: true,
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const DailyReportScreen()),
+          );
+        },
       ),
       const _AlertCard(
         icon: Icons.chat_bubble_outline,
@@ -235,7 +260,13 @@ class _AlertCenterScreenState extends State<AlertCenterScreen> {
                   child: Icon(Icons.chevron_left, size: 24, color: _dark),
                 ),
               ),
-              Expanded(child: Text('알림', textAlign: TextAlign.center, style: _navTitle())),
+              Expanded(
+                child: Text(
+                  '알림',
+                  textAlign: TextAlign.center,
+                  style: _navTitle(),
+                ),
+              ),
               Text('모두 읽음', style: _caption()),
             ],
           ),
@@ -291,7 +322,10 @@ class _TopBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        const Text('9:41', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+        const Text(
+          '9:41',
+          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+        ),
         const Spacer(),
         GestureDetector(
           onTap: onOpenAlerts,
@@ -305,7 +339,11 @@ class _TopBar extends StatelessWidget {
                   borderRadius: BorderRadius.circular(99),
                   border: Border.all(color: _line),
                 ),
-                child: const Icon(Icons.notifications_none, size: 18, color: _dark),
+                child: const Icon(
+                  Icons.notifications_none,
+                  size: 18,
+                  color: _dark,
+                ),
               ),
               Positioned(
                 right: 7,
@@ -313,7 +351,10 @@ class _TopBar extends StatelessWidget {
                 child: Container(
                   width: 6,
                   height: 6,
-                  decoration: const BoxDecoration(color: Color(0xFFD55045), shape: BoxShape.circle),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFD55045),
+                    shape: BoxShape.circle,
+                  ),
                 ),
               ),
             ],
@@ -345,25 +386,41 @@ class _StatusCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
                   decoration: BoxDecoration(
                     color: const Color(0xFFE8F6D9),
                     borderRadius: BorderRadius.circular(99),
                   ),
                   child: const Text(
                     '안정적',
-                    style: TextStyle(fontSize: 10, color: Color(0xFF4C8B3D), fontWeight: FontWeight.w800),
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: Color(0xFF4C8B3D),
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                 ),
                 SizedBox(height: 8.h),
                 const Text(
                   '지금 박순자님과\n이야기 중이에요.',
-                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: _dark, height: 1.25),
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w900,
+                    color: _dark,
+                    height: 1.25,
+                  ),
                 ),
                 SizedBox(height: 4.h),
                 Row(
                   children: [
-                    const Icon(Icons.battery_full, size: 13, color: Color(0xFF5D9E41)),
+                    const Icon(
+                      Icons.battery_full,
+                      size: 13,
+                      color: Color(0xFF5D9E41),
+                    ),
                     SizedBox(width: 3.w),
                     Text('78%', style: _caption()),
                   ],
@@ -392,7 +449,11 @@ class _MoodCard extends StatelessWidget {
               const CircleAvatar(
                 radius: 20,
                 backgroundColor: Color(0xFFFFF2C3),
-                child: Icon(Icons.sentiment_satisfied_alt, color: _yellow, size: 22),
+                child: Icon(
+                  Icons.sentiment_satisfied_alt,
+                  color: _yellow,
+                  size: 22,
+                ),
               ),
               SizedBox(width: 10.w),
               Expanded(
@@ -400,7 +461,14 @@ class _MoodCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text('지금 감정', style: _caption()),
-                    const Text('평온해요', style: TextStyle(fontSize: 15, color: _dark, fontWeight: FontWeight.w900)),
+                    const Text(
+                      '평온해요',
+                      style: TextStyle(
+                        fontSize: 15,
+                        color: _dark,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -408,7 +476,13 @@ class _MoodCard extends StatelessWidget {
             ],
           ),
           SizedBox(height: 12.h),
-          SizedBox(height: 34.h, child: CustomPaint(painter: _MoodLinePainter(), child: const SizedBox.expand())),
+          SizedBox(
+            height: 34.h,
+            child: CustomPaint(
+              painter: _MoodLinePainter(),
+              child: const SizedBox.expand(),
+            ),
+          ),
           SizedBox(height: 4.h),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -457,40 +531,51 @@ class _QuickTile extends StatelessWidget {
         decoration: _cardDecoration(color: color),
         child: Stack(
           children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(icon, color: isLight ? _brown : textColor, size: 20),
-              const Spacer(),
-              Text(
-                title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 13, color: textColor, fontWeight: FontWeight.w900),
-              ),
-              const SizedBox(height: 3),
-              Text(
-                subtitle,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 9,
-                  color: isLight ? _muted : textColor.withValues(alpha: 0.78),
-                  fontWeight: FontWeight.w600,
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(icon, color: isLight ? _brown : textColor, size: 20),
+                const Spacer(),
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: textColor,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 9,
+                    color: isLight ? _muted : textColor.withValues(alpha: 0.78),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+            if (badge != null)
+              Positioned(
+                right: 0,
+                top: 0,
+                child: CircleAvatar(
+                  radius: 9,
+                  backgroundColor: const Color(0xFFC9564D),
+                  child: Text(
+                    badge!,
+                    style: const TextStyle(
+                      fontSize: 8,
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
                 ),
               ),
-            ],
-          ),
-          if (badge != null)
-            Positioned(
-              right: 0,
-              top: 0,
-              child: CircleAvatar(
-                radius: 9,
-                backgroundColor: const Color(0xFFC9564D),
-                child: Text(badge!, style: const TextStyle(fontSize: 8, color: Colors.white, fontWeight: FontWeight.w800)),
-              ),
-            ),
           ],
         ),
       ),
@@ -524,7 +609,10 @@ class _TimelineItem extends StatelessWidget {
           Container(
             width: 32,
             height: 32,
-            decoration: BoxDecoration(color: tint, borderRadius: BorderRadius.circular(10)),
+            decoration: BoxDecoration(
+              color: tint,
+              borderRadius: BorderRadius.circular(10),
+            ),
             child: Icon(icon, size: 17, color: _brown),
           ),
           SizedBox(width: 10.w),
@@ -532,9 +620,19 @@ class _TimelineItem extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: _listTitle(), maxLines: 1, overflow: TextOverflow.ellipsis),
+                Text(
+                  title,
+                  style: _listTitle(),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
                 const SizedBox(height: 3),
-                Text(subtitle, style: _caption(), maxLines: 1, overflow: TextOverflow.ellipsis),
+                Text(
+                  subtitle,
+                  style: _caption(),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ],
             ),
           ),
@@ -567,16 +665,28 @@ class _HomeNavBar extends StatelessWidget {
           for (final item in items)
             GestureDetector(
               behavior: HitTestBehavior.opaque,
-              onTap: item.$2 == '추억'
-                  ? () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const MemoryAddFlow(),
-                        ),
-                      );
-                    }
-                  : null,
+              onTap: () {
+                if (item.$2 == '대화') {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const FamilyChatScreen()),
+                  );
+                }
+
+                if (item.$2 == '추억') {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const MemoryAddFlow()),
+                  );
+                }
+
+                if (item.$2 == '설정') {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const SettingsFlow()),
+                  );
+                }
+              },
               child: SizedBox(
                 width: 52,
                 height: 54,
@@ -604,10 +714,7 @@ class _HomeNavBar extends StatelessWidget {
 }
 
 class _AlertTabs extends StatelessWidget {
-  const _AlertTabs({
-    required this.selected,
-    required this.onSelected,
-  });
+  const _AlertTabs({required this.selected, required this.onSelected});
 
   final String selected;
   final ValueChanged<String> onSelected;
@@ -617,7 +724,10 @@ class _AlertTabs extends StatelessWidget {
     return Container(
       height: 38,
       padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(color: const Color(0xFFEDE3D8), borderRadius: BorderRadius.circular(8)),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEDE3D8),
+        borderRadius: BorderRadius.circular(8),
+      ),
       child: Row(
         children: [
           for (final tab in const ['전체', '긴급', '리포트'])
@@ -657,7 +767,11 @@ class _TabItem extends StatelessWidget {
           ),
           child: Text(
             text,
-            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: selected ? _brown : _muted),
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+              color: selected ? _brown : _muted,
+            ),
           ),
         ),
       ),
@@ -674,6 +788,7 @@ class _AlertCard extends StatelessWidget {
     this.action,
     this.urgent = false,
     this.warm = false,
+    this.onTap,
   });
 
   final IconData icon;
@@ -683,51 +798,106 @@ class _AlertCard extends StatelessWidget {
   final String? action;
   final bool urgent;
   final bool warm;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final cardColor = warm ? const Color(0xFFFFF8E7) : Colors.white;
-    final borderColor = urgent ? const Color(0xFFE56A61) : warm ? const Color(0xFFF1C967) : _line;
+    final borderColor = urgent
+        ? const Color(0xFFE56A61)
+        : warm
+        ? const Color(0xFFF1C967)
+        : _line;
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(color: cardColor, borderRadius: BorderRadius.circular(12), border: Border.all(color: borderColor)),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 34,
-            height: 34,
-            decoration: BoxDecoration(
-              color: urgent ? const Color(0xFFFFE3E0) : const Color(0xFFF4E4D5),
-              borderRadius: BorderRadius.circular(10),
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: cardColor,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: borderColor),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                color: urgent
+                    ? const Color(0xFFFFE3E0)
+                    : const Color(0xFFF4E4D5),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(
+                icon,
+                color: urgent ? const Color(0xFFE56A61) : _brown,
+                size: 18,
+              ),
             ),
-            child: Icon(icon, color: urgent ? const Color(0xFFE56A61) : _brown, size: 18),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (label != null)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                    decoration: BoxDecoration(color: _brown.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(99)),
-                    child: Text(label!, style: const TextStyle(fontSize: 9, color: _brown, fontWeight: FontWeight.w900)),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (label != null)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 7,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _brown.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(99),
+                      ),
+                      child: Text(
+                        label!,
+                        style: const TextStyle(
+                          fontSize: 9,
+                          color: _brown,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                  const SizedBox(height: 5),
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: _dark,
+                      fontWeight: FontWeight.w900,
+                      height: 1.25,
+                    ),
                   ),
-                const SizedBox(height: 5),
-                Text(title, style: const TextStyle(fontSize: 13, color: _dark, fontWeight: FontWeight.w900, height: 1.25)),
-                const SizedBox(height: 5),
-                Text(body, style: const TextStyle(fontSize: 10, color: _muted, height: 1.45, fontWeight: FontWeight.w500)),
-                if (action != null) ...[
-                  const SizedBox(height: 7),
-                  Text('$action  >', style: const TextStyle(fontSize: 10, color: _brown, fontWeight: FontWeight.w900)),
+                  const SizedBox(height: 5),
+                  Text(
+                    body,
+                    style: const TextStyle(
+                      fontSize: 10,
+                      color: _muted,
+                      height: 1.45,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  if (action != null) ...[
+                    const SizedBox(height: 7),
+                    Text(
+                      '$action  >',
+                      style: const TextStyle(
+                        fontSize: 10,
+                        color: _brown,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -781,36 +951,69 @@ class _HomeIndicator extends StatelessWidget {
       width: 58,
       height: 3,
       margin: const EdgeInsets.only(bottom: 5),
-      decoration: BoxDecoration(color: const Color(0xFFC7B8AE), borderRadius: BorderRadius.circular(99)),
+      decoration: BoxDecoration(
+        color: const Color(0xFFC7B8AE),
+        borderRadius: BorderRadius.circular(99),
+      ),
     );
   }
 }
 
 TextStyle _headline() {
-  return const TextStyle(fontSize: 20, height: 1.25, fontWeight: FontWeight.w900, color: _dark);
+  return const TextStyle(
+    fontSize: 20,
+    height: 1.25,
+    fontWeight: FontWeight.w900,
+    color: _dark,
+  );
 }
 
 TextStyle _sectionTitle() {
-  return const TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: _dark);
+  return const TextStyle(
+    fontSize: 14,
+    fontWeight: FontWeight.w900,
+    color: _dark,
+  );
 }
 
 TextStyle _navTitle() {
-  return const TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: _dark);
+  return const TextStyle(
+    fontSize: 15,
+    fontWeight: FontWeight.w900,
+    color: _dark,
+  );
 }
 
 TextStyle _listTitle() {
-  return const TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: _dark);
+  return const TextStyle(
+    fontSize: 12,
+    fontWeight: FontWeight.w900,
+    color: _dark,
+  );
 }
 
 TextStyle _caption() {
-  return const TextStyle(fontSize: 10, color: _muted, fontWeight: FontWeight.w600, height: 1.35);
+  return const TextStyle(
+    fontSize: 10,
+    color: _muted,
+    fontWeight: FontWeight.w600,
+    height: 1.35,
+  );
 }
 
 TextStyle _tiny() {
-  return const TextStyle(fontSize: 9, color: _muted, fontWeight: FontWeight.w600, height: 1.3);
+  return const TextStyle(
+    fontSize: 9,
+    color: _muted,
+    fontWeight: FontWeight.w600,
+    height: 1.3,
+  );
 }
 
-BoxDecoration _cardDecoration({Color color = Colors.white, bool shadow = false}) {
+BoxDecoration _cardDecoration({
+  Color color = Colors.white,
+  bool shadow = false,
+}) {
   return BoxDecoration(
     color: color,
     borderRadius: BorderRadius.circular(14),

@@ -1,5 +1,8 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../4. home/home_and_alert_center.dart';
 
@@ -57,6 +60,7 @@ class MemoryAddScreen extends StatefulWidget {
 class _MemoryAddScreenState extends State<MemoryAddScreen> {
   final TextEditingController _titleController = TextEditingController();
   final TextEditingController _storyController = TextEditingController();
+  Uint8List? _selectedPhoto;
   int _selectedWhen = 0;
 
   final List<String> _whenOptions = ['오늘', '최근', '몇 년 전', '오래된 추억'];
@@ -66,6 +70,14 @@ class _MemoryAddScreenState extends State<MemoryAddScreen> {
     _titleController.dispose();
     _storyController.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickPhoto() async {
+    final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
+    if (picked == null) return;
+    final bytes = await picked.readAsBytes();
+    if (!mounted) return;
+    setState(() => _selectedPhoto = bytes);
   }
 
   @override
@@ -86,7 +98,10 @@ class _MemoryAddScreenState extends State<MemoryAddScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _PhotoUploadBox(),
+                      _PhotoUploadBox(
+                        imageBytes: _selectedPhoto,
+                        onTap: _pickPhoto,
+                      ),
                       SizedBox(height: 18.h),
                       _Label('한 줄 제목'),
                       _TextFieldBox(
@@ -287,34 +302,70 @@ class _Header extends StatelessWidget {
 }
 
 class _PhotoUploadBox extends StatelessWidget {
+  const _PhotoUploadBox({required this.imageBytes, required this.onTap});
+
+  final Uint8List? imageBytes;
+  final VoidCallback onTap;
+
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 150.h,
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(10.r),
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.image_outlined, size: 32.sp, color: _brown),
-          SizedBox(height: 12.h),
-          Text(
-            '사진을 한 장 골라주세요',
-            style: TextStyle(
-              fontSize: 15.sp,
-              color: _brown,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          SizedBox(height: 5.h),
-          Text(
-            '가족, 풍경, 음식 모두 좋아요',
-            style: _caption(),
-          ),
-        ],
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        height: 150.h,
+        width: double.infinity,
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(10.r),
+        ),
+        child: imageBytes == null
+            ? Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.image_outlined, size: 32.sp, color: _brown),
+                  SizedBox(height: 12.h),
+                  Text(
+                    '사진을 한 장 골라주세요',
+                    style: TextStyle(
+                      fontSize: 15.sp,
+                      color: _brown,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  SizedBox(height: 5.h),
+                  Text('가족, 풍경, 음식 모두 좋아요', style: _caption()),
+                ],
+              )
+            : Stack(
+                fit: StackFit.expand,
+                children: [
+                  Image.memory(imageBytes!, fit: BoxFit.cover),
+                  Positioned(
+                    right: 10.w,
+                    bottom: 10.h,
+                    child: Container(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 10.w,
+                        vertical: 7.h,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _dark.withValues(alpha: 0.72),
+                        borderRadius: BorderRadius.circular(99.r),
+                      ),
+                      child: Text(
+                        '사진 바꾸기',
+                        style: TextStyle(
+                          fontSize: 11.sp,
+                          color: Colors.white,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
       ),
     );
   }
@@ -526,11 +577,7 @@ class _MemoryNavBar extends StatelessWidget {
             Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(
-                  item.$1,
-                  size: 22.sp,
-                  color: item.$3 ? _yellow : _muted,
-                ),
+                Icon(item.$1, size: 22.sp, color: item.$3 ? _yellow : _muted),
                 SizedBox(height: 3.h),
                 Text(
                   item.$2,

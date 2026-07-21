@@ -4,7 +4,10 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import '3. code/first_registration_flow.dart';
 import '4. home/home_and_alert_center.dart';
 import '5. memory/memory_add_flow.dart';
+import '6. chat/family_chat_screen.dart';
+import '7. report/daily_report_screen.dart';
 import '8. vocie/voice_record_flow.dart';
+import '9. set/settings_flow.dart';
 
 const Color _bg = Color(0xFFFBF6EE);
 const Color _brown = Color(0xFF936249);
@@ -88,6 +91,16 @@ class PreviewLauncher extends StatelessWidget {
         page: const HomeAndAlertPreview(),
       ),
       _PreviewItem(
+        title: '가족 대화방',
+        subtitle: '가족 메시지, 사진 공유, 입력창 화면',
+        page: const FamilyChatScreen(),
+      ),
+      _PreviewItem(
+        title: '데일리 리포트',
+        subtitle: '오늘 요약, 감정 흐름, 일과, 제안 화면',
+        page: const DailyReportScreen(),
+      ),
+      _PreviewItem(
         title: '추억 추가',
         subtitle: '작성 후 저장을 누르면 저장 완료 화면으로 이동',
         page: const MemoryAddFlow(),
@@ -96,6 +109,11 @@ class PreviewLauncher extends StatelessWidget {
         title: '내 목소리 등록',
         subtitle: '녹음 안내, 녹음 중, 확인, 완료 화면',
         page: const VoiceRecordFlow(),
+      ),
+      _PreviewItem(
+        title: '설정',
+        subtitle: '프로필, 인형, 가족, 알림, 약 복용 설정',
+        page: const SettingsFlow(),
       ),
     ];
 
@@ -130,7 +148,7 @@ class PreviewLauncher extends StatelessWidget {
                 child: ListView.separated(
                   physics: const BouncingScrollPhysics(),
                   itemCount: pages.length,
-                  separatorBuilder: (_, __) => SizedBox(height: 12.h),
+                  separatorBuilder: (_, _) => SizedBox(height: 12.h),
                   itemBuilder: (context, index) {
                     final item = pages[index];
                     return _PreviewCard(item: item);
@@ -154,10 +172,7 @@ class _PreviewCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => item.page),
-        );
+        Navigator.push(context, MaterialPageRoute(builder: (_) => item.page));
       },
       child: Container(
         padding: EdgeInsets.all(18.w),

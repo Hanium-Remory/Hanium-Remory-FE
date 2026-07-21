@@ -11,7 +11,6 @@ const Color _dark = Color(0xFF2F2521);
 const Color _muted = Color(0xFF7C6B61);
 const Color _line = Color(0xFFE8DCD2);
 const Color _softYellow = Color(0xFFFFF3D2);
-const Color _yellow = Color(0xFFF6C43D);
 
 class VoiceRecordFlow extends StatefulWidget {
   const VoiceRecordFlow({super.key});
@@ -103,13 +102,20 @@ class VoiceIntroScreen extends StatelessWidget {
                     CircleAvatar(
                       radius: 48.r,
                       backgroundColor: const Color(0xFFEFD6C5),
-                      child: Icon(Icons.smart_toy_outlined, size: 48.sp, color: _brown),
+                      child: Icon(
+                        Icons.smart_toy_outlined,
+                        size: 48.sp,
+                        color: _brown,
+                      ),
                     ),
                     Positioned(
                       right: -46.w,
                       top: -8.h,
                       child: Container(
-                        padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 8.h),
+                        padding: EdgeInsets.symmetric(
+                          horizontal: 12.w,
+                          vertical: 8.h,
+                        ),
                         decoration: BoxDecoration(
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(12.r),
@@ -259,13 +265,13 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen> {
                 children: [
                   Text('예시 ${_scriptIndex + 1} / 4', style: _label()),
                   SizedBox(width: 8.w),
-                  Text(
-                    _scriptTitles[_scriptIndex],
-                    style: _label(size: 13.sp),
-                  ),
+                  Text(_scriptTitles[_scriptIndex], style: _label(size: 13.sp)),
                   Container(
                     margin: EdgeInsets.only(left: 8.w),
-                    padding: EdgeInsets.symmetric(horizontal: 7.w, vertical: 3.h),
+                    padding: EdgeInsets.symmetric(
+                      horizontal: 7.w,
+                      vertical: 3.h,
+                    ),
                     decoration: BoxDecoration(
                       color: _softYellow,
                       borderRadius: BorderRadius.circular(99.r),
@@ -280,7 +286,10 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen> {
                       });
                     },
                     child: Container(
-                      padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 7.h),
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 12.w,
+                        vertical: 7.h,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(99.r),
@@ -534,13 +543,19 @@ class VoiceCompleteScreen extends StatelessWidget {
               SizedBox(height: 18.h),
               Center(
                 child: Container(
-                  padding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 8.h),
+                  padding: EdgeInsets.symmetric(
+                    horizontal: 14.w,
+                    vertical: 8.h,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(99.r),
                     border: Border.all(color: _line),
                   ),
-                  child: Text('이제 내 목소리를 배우는 중이에요', style: _tiny(color: _brown)),
+                  child: Text(
+                    '이제 내 목소리를 배우는 중이에요',
+                    style: _tiny(color: _brown),
+                  ),
                 ),
               ),
               const Spacer(),
@@ -609,11 +624,7 @@ class _Header extends StatelessWidget {
 class _TipBox extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    final tips = [
-      '조용한 곳에서 녹음해주세요',
-      '천천히 또박또박 읽어주세요',
-      '1~3분 정도면 충분해요',
-    ];
+    final tips = ['조용한 곳에서 녹음해주세요', '천천히 또박또박 읽어주세요', '1~3분 정도면 충분해요'];
 
     return Container(
       width: double.infinity,
@@ -705,9 +716,7 @@ class _Waveform extends StatelessWidget {
                   height: bars[i].h,
                   margin: EdgeInsets.symmetric(horizontal: 1.w),
                   decoration: BoxDecoration(
-                    color: active || i < 11
-                        ? _brown
-                        : const Color(0xFFE9DED3),
+                    color: active || i < 11 ? _brown : const Color(0xFFE9DED3),
                     borderRadius: BorderRadius.circular(99.r),
                   ),
                 ),
@@ -835,9 +844,5 @@ TextStyle _label({double? size}) {
 }
 
 TextStyle _tiny({required Color color}) {
-  return TextStyle(
-    fontSize: 10.sp,
-    color: color,
-    fontWeight: FontWeight.w800,
-  );
+  return TextStyle(fontSize: 10.sp, color: color, fontWeight: FontWeight.w800);
 }
