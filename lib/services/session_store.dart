@@ -25,9 +25,29 @@ class SessionStore {
     return (p.getString(_kRefresh) ?? '').isNotEmpty;
   }
 
+  /// access 토큰이 만료됐을 때 재발급에 쓴다.
+  static Future<void> saveTokens({
+    required String accessToken,
+    required String refreshToken,
+  }) async {
+    final p = await SharedPreferences.getInstance();
+    await p.setString(_kAccess, accessToken);
+    await p.setString(_kRefresh, refreshToken);
+  }
+
   static Future<String?> accessToken() async {
     final p = await SharedPreferences.getInstance();
     return p.getString(_kAccess);
+  }
+
+  static Future<String?> refreshToken() async {
+    final p = await SharedPreferences.getInstance();
+    return p.getString(_kRefresh);
+  }
+
+  static Future<int?> protectorId() async {
+    final p = await SharedPreferences.getInstance();
+    return p.getInt(_kProtectorId);
   }
 
   /// 로그아웃/세션 초기화.

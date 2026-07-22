@@ -3,8 +3,11 @@ import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../1. splash_onboarding/splash_screen.dart';
 import '../5. memory/memory_add_flow.dart';
 import '../6. chat/family_chat_screen.dart';
+import '../services/session_store.dart';
+import '../services/settings_api.dart';
 
 const Color _bg = Color(0xFFFBF6EE);
 const Color _brown = Color(0xFF936249);
@@ -14,6 +17,8 @@ const Color _line = Color(0xFFE8DCD2);
 const Color _yellow = Color(0xFFF6C43D);
 const Color _green = Color(0xFF5D9E41);
 
+final SettingsApi _api = SettingsApi();
+
 class SettingsFlow extends StatelessWidget {
   const SettingsFlow({super.key});
 
@@ -21,6 +26,49 @@ class SettingsFlow extends StatelessWidget {
   Widget build(BuildContext context) {
     return const SettingsHubScreen();
   }
+}
+
+/// 설정 허브에서 한 번에 불러오는 것들(각 화면 부제목에 쓰인다).
+class _HubData {
+  _HubData({
+    required this.profile,
+    required this.family,
+    required this.dnd,
+    required this.medications,
+    required this.info,
+  });
+
+  final MyProfile profile;
+  final FamilyMembers? family;
+  final DndSettings? dnd;
+  final MedicationList? medications;
+  final ServiceInfo? info;
+}
+
+Future<_HubData> _loadHub() async {
+  final profile = await _api.myProfile();
+  final user = profile.mainUser;
+  final deviceId = user?.deviceId;
+
+  // 아직 어르신/인형이 연결되지 않았으면 해당 호출은 건너뛴다.
+  final Future<FamilyMembers?> familyF = user == null
+      ? Future<FamilyMembers?>.value()
+      : _api.familyMembers(user.userId);
+  final Future<DndSettings?> dndF =
+      deviceId == null ? Future<DndSettings?>.value() : _api.dnd(deviceId);
+  final Future<MedicationList?> medsF = deviceId == null
+      ? Future<MedicationList?>.value()
+      : _api.medications(deviceId);
+  final Future<ServiceInfo?> infoF =
+      _api.serviceInfo().then<ServiceInfo?>((v) => v).catchError((_) => null);
+
+  return _HubData(
+    profile: profile,
+    family: await familyF,
+    dnd: await dndF,
+    medications: await medsF,
+    info: await infoF,
+  );
 }
 
 class SettingsHubScreen extends StatelessWidget {
@@ -42,66 +90,119 @@ class SettingsHubScreen extends StatelessWidget {
             ),
           ),
           SizedBox(height: 18.h),
-          GestureDetector(
-            onTap: () => _push(context, const MyProfileScreen()),
-            child: Container(
-              padding: const EdgeInsets.all(16),
-              decoration: _cardDecoration(),
-              child: Row(
-                children: [
-                  const _Avatar(label: '김', size: 50, color: _brown),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: const [
-                        Text(
-                          '김지영',
-                          style: TextStyle(
-                            fontSize: 15,
-                            color: _dark,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                        SizedBox(height: 4),
-                        Text(
-                          '딸 · 010-1234-5678',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: _muted,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const Icon(Icons.chevron_right, color: _muted, size: 20),
-                ],
-              ),
+          Expanded(
+            child: _AsyncView<_HubData>(
+              load: _loadHub,
+              builder: (context, data, reload) =>
+                  _HubBody(data: data, reload: reload),
             ),
           ),
-          SizedBox(height: 16.h),
+          const _SettingsNavBar(),
+          SizedBox(height: 8.h),
+        ],
+      ),
+    );
+  }
+}
+
+class _HubBody extends StatelessWidget {
+  const _HubBody({required this.data, required this.reload});
+
+  final _HubData data;
+  final Future<void> Function() reload;
+
+  @override
+  Widget build(BuildContext context) {
+    final profile = data.profile;
+    final user = profile.mainUser;
+    final deviceId = user?.deviceId;
+    final dnd = data.dnd;
+
+    return ListView(
+      physics: const BouncingScrollPhysics(),
+      padding: EdgeInsets.zero,
+      children: [
+        GestureDetector(
+          onTap: () => _openAndReload(context, const MyProfileScreen(), reload),
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: _cardDecoration(),
+            child: Row(
+              children: [
+                _Avatar(label: _initial(profile.name), size: 50, color: _brown),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        profile.name,
+                        style: const TextStyle(
+                          fontSize: 15,
+                          color: _dark,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        [
+                          if (profile.relation != null) profile.relation!,
+                          if (profile.formattedPhone.isNotEmpty)
+                            profile.formattedPhone,
+                        ].join(' · '),
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: _muted,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.chevron_right, color: _muted, size: 20),
+              ],
+            ),
+          ),
+        ),
+        SizedBox(height: 16.h),
+        if (user == null)
+          _NoElderCard(reload: reload)
+        else ...[
           _Section(
             title: '돌봄',
             children: [
               _MenuRow(
                 icon: Icons.sentiment_satisfied_alt,
                 title: '모리 인형 설정',
-                subtitle: '목소리, 볼륨, 베어링',
-                onTap: () => _push(context, const DollSettingsScreen()),
+                subtitle: '목소리, 볼륨, 배터리',
+                onTap: deviceId == null
+                    ? null
+                    : () => _openAndReload(
+                          context,
+                          DollSettingsScreen(deviceId: deviceId),
+                          reload,
+                        ),
               ),
               _MenuRow(
                 icon: Icons.person_outline,
-                title: '박순자님 정보',
-                subtitle: '이름, 생년월일, 좋아하는 것들 등',
-                onTap: () => _push(context, const ElderInfoScreen()),
+                title: '${user.name}님 정보',
+                subtitle: '이름, 성별, 생년월일',
+                onTap: () => _openAndReload(
+                  context,
+                  ElderInfoScreen(userId: user.userId),
+                  reload,
+                ),
               ),
               _MenuRow(
                 icon: Icons.groups_outlined,
                 title: '가족 멤버',
-                subtitle: '3명 연결됨',
-                badge: '3',
-                onTap: () => _push(context, const FamilyMembersScreen()),
+                subtitle: '${data.family?.familyCount ?? 0}명 연결됨',
+                badge: '${data.family?.familyCount ?? 0}',
+                onTap: () => _openAndReload(
+                  context,
+                  FamilyMembersScreen(userId: user.userId),
+                  reload,
+                ),
               ),
             ],
           ),
@@ -113,162 +214,325 @@ class SettingsHubScreen extends StatelessWidget {
                 icon: Icons.notifications_none,
                 title: '알림 설정',
                 subtitle: '긴급 / 데일리 / 일반',
-                onTap: () => _push(context, const NotificationSettingsScreen()),
+                onTap: () => _openAndReload(
+                  context,
+                  const NotificationSettingsScreen(),
+                  reload,
+                ),
               ),
               _MenuRow(
                 icon: Icons.nightlight_round,
                 title: '방해 금지 시간',
-                subtitle: '오후 11시 ~ 오전 7시',
-                onTap: () => _push(context, const QuietHoursScreen()),
+                subtitle: dnd == null
+                    ? '-'
+                    : dnd.enabled
+                        ? '${_hourText(dnd.startHour)} ~ ${_hourText(dnd.endHour)}'
+                        : '사용 안 함',
+                onTap: deviceId == null
+                    ? null
+                    : () => _openAndReload(
+                          context,
+                          QuietHoursScreen(deviceId: deviceId),
+                          reload,
+                        ),
               ),
               _MenuRow(
                 icon: Icons.medication_outlined,
                 title: '약 복용 시간',
-                subtitle: '하루 2번',
-                onTap: () => _push(context, const MedicationTimeScreen()),
+                subtitle: '하루 ${data.medications?.items.length ?? 0}번',
+                onTap: deviceId == null
+                    ? null
+                    : () => _openAndReload(
+                          context,
+                          MedicationTimeScreen(deviceId: deviceId),
+                          reload,
+                        ),
               ),
             ],
           ),
-          SizedBox(height: 14.h),
-          _Section(
-            title: '계정',
-            children: const [
-              _MenuRow(
-                icon: Icons.shield_outlined,
-                title: '개인정보 및 보안',
-                subtitle: '',
-              ),
-              _MenuRow(
-                icon: Icons.info_outline,
-                title: 'ReMory 정보',
-                subtitle: '버전 1.0.2',
-              ),
-            ],
+        ],
+        SizedBox(height: 14.h),
+        _Section(
+          title: '계정',
+          children: [
+            const _MenuRow(
+              icon: Icons.shield_outlined,
+              title: '개인정보 및 보안',
+              subtitle: '',
+            ),
+            _MenuRow(
+              icon: Icons.info_outline,
+              title: 'ReMory 정보',
+              subtitle: data.info == null ? '' : '버전 ${data.info!.version}',
+            ),
+          ],
+        ),
+        SizedBox(height: 16.h),
+      ],
+    );
+  }
+}
+
+/// 어르신·인형이 아직 연결되지 않은 상태(첫 등록/초대 코드 플로우 연결 전).
+class _NoElderCard extends StatefulWidget {
+  const _NoElderCard({required this.reload});
+
+  final Future<void> Function() reload;
+
+  @override
+  State<_NoElderCard> createState() => _NoElderCardState();
+}
+
+class _NoElderCardState extends State<_NoElderCard> {
+  bool _busy = false;
+
+  Future<void> _seed() async {
+    setState(() => _busy = true);
+    try {
+      await _api.seedDemoData();
+      await widget.reload();
+    } catch (e) {
+      if (mounted) _toast(context, _errorText(e));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: _cardDecoration(),
+      child: Column(
+        children: [
+          const Icon(Icons.link_off, color: _muted, size: 28),
+          SizedBox(height: 10.h),
+          Text(
+            '아직 연결된 어르신이 없어요.\n인형을 등록하면 돌봄·알림 설정을 쓸 수 있어요.',
+            textAlign: TextAlign.center,
+            style: _caption(),
           ),
-          const Spacer(),
-          const _SettingsNavBar(),
-          SizedBox(height: 8.h),
+          SizedBox(height: 12.h),
+          // 첫 등록/초대 코드 플로우가 붙기 전까지 쓰는 개발용 버튼.
+          TextButton(
+            onPressed: _busy ? null : _seed,
+            style: TextButton.styleFrom(foregroundColor: _brown),
+            child: Text(_busy ? '만드는 중...' : '샘플 데이터 만들기 (개발용)'),
+          ),
         ],
       ),
     );
   }
 }
 
-class MyProfileScreen extends StatefulWidget {
+// ── 내 프로필 ────────────────────────────────────────
+class MyProfileScreen extends StatelessWidget {
   const MyProfileScreen({super.key});
-
-  @override
-  State<MyProfileScreen> createState() => _MyProfileScreenState();
-}
-
-class _MyProfileScreenState extends State<MyProfileScreen> {
-  bool urgent = true;
-  bool daily = true;
-  bool chat = true;
-  bool marketing = false;
 
   @override
   Widget build(BuildContext context) {
     return _PhoneFrame(
-      child: Column(
-        children: [
-          _TopHeader(
-            title: '내 프로필',
-            action: '편집',
-            onAction: () => _push(context, const MyProfileEditScreen()),
-          ),
-          Expanded(
-            child: ListView(
-              physics: const BouncingScrollPhysics(),
-              children: [
-                SizedBox(height: 22.h),
-                Center(
-                  child: Stack(
-                    clipBehavior: Clip.none,
-                    children: const [
-                      _Avatar(label: '김', size: 78, color: _brown),
-                      Positioned(
-                        right: -2,
-                        bottom: -2,
-                        child: _SmallCircleButton(icon: Icons.add),
-                      ),
-                    ],
-                  ),
-                ),
-                SizedBox(height: 14.h),
-                const Text(
-                  '김지영',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 20,
-                    color: _dark,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                Text('박순자의 딸', textAlign: TextAlign.center, style: _tiny()),
-                SizedBox(height: 28.h),
-                _Label('기본 정보'),
-                const _InfoCard(
-                  rows: [('이름', '김지영'), ('전화번호', '010-1234-5678'), ('관계', '딸')],
-                ),
-                SizedBox(height: 16.h),
-                _Label('내가 받는 알림'),
-                _SwitchCard(
-                  rows: [
-                    _SwitchData(
-                      '긴급 알림',
-                      '감정 변화, 기기 연결 등',
-                      urgent,
-                      (v) => setState(() => urgent = v),
-                    ),
-                    _SwitchData(
-                      '데일리 리포트',
-                      '매일 아침 7시',
-                      daily,
-                      (v) => setState(() => daily = v),
-                    ),
-                    _SwitchData(
-                      '대화 알림',
-                      '박순자님이 말씀하실 때',
-                      chat,
-                      (v) => setState(() => chat = v),
-                    ),
-                    _SwitchData(
-                      '마케팅 알림',
-                      '신기능 안내',
-                      marketing,
-                      (v) => setState(() => marketing = v),
-                    ),
-                  ],
-                ),
-              ],
+      child: _AsyncView<MyProfile>(
+        load: _api.myProfile,
+        builder: (context, profile, reload) => Column(
+          children: [
+            _TopHeader(
+              title: '내 프로필',
+              action: '편집',
+              onAction: () => _openAndReload(
+                context,
+                MyProfileEditScreen(profile: profile),
+                reload,
+              ),
             ),
-          ),
-          const _HomeIndicator(),
-        ],
+            Expanded(child: _MyProfileBody(profile: profile)),
+            const _HomeIndicator(),
+          ],
+        ),
       ),
+    );
+  }
+}
+
+class _MyProfileBody extends StatefulWidget {
+  const _MyProfileBody({required this.profile});
+
+  final MyProfile profile;
+
+  @override
+  State<_MyProfileBody> createState() => _MyProfileBodyState();
+}
+
+class _MyProfileBodyState extends State<_MyProfileBody> {
+  late Map<String, bool> _values = Map.of(widget.profile.notifications);
+
+  /// 스위치는 즉시 반영하고, 실패하면 이전 값으로 되돌린다.
+  Future<void> _toggle(String key, bool value) async {
+    final previous = _values[key] ?? false;
+    setState(() => _values[key] = value);
+    try {
+      final saved = await _api.updateNotificationSettings({key: value});
+      if (mounted) setState(() => _values = saved);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _values[key] = previous);
+      _toast(context, _errorText(e));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final profile = widget.profile;
+    final elder = profile.mainUser;
+
+    return ListView(
+      physics: const BouncingScrollPhysics(),
+      children: [
+        SizedBox(height: 22.h),
+        Center(
+          child: _Avatar(label: _initial(profile.name), size: 78, color: _brown),
+        ),
+        SizedBox(height: 14.h),
+        Text(
+          profile.name,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            fontSize: 20,
+            color: _dark,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        if (elder != null && profile.relation != null)
+          Text(
+            '${elder.name}의 ${profile.relation}',
+            textAlign: TextAlign.center,
+            style: _tiny(),
+          ),
+        SizedBox(height: 28.h),
+        _Label('기본 정보'),
+        _InfoCard(
+          rows: [
+            ('이름', profile.name),
+            ('전화번호', profile.formattedPhone),
+            ('관계', profile.relation ?? '미입력'),
+          ],
+        ),
+        SizedBox(height: 16.h),
+        _Label('내가 받는 알림'),
+        _SwitchCard(
+          rows: [
+            _SwitchData(
+              '긴급 알림',
+              '감정 변화, 기기 연결 등',
+              _values[NotificationKeys.urgent] ?? false,
+              (v) => _toggle(NotificationKeys.urgent, v),
+            ),
+            _SwitchData(
+              '데일리 리포트',
+              '매일 아침 7시',
+              _values[NotificationKeys.dailyReport] ?? false,
+              (v) => _toggle(NotificationKeys.dailyReport, v),
+            ),
+            _SwitchData(
+              '대화 알림',
+              '${elder?.name ?? '어르신'}님이 말씀하실 때',
+              _values[NotificationKeys.chat] ?? false,
+              (v) => _toggle(NotificationKeys.chat, v),
+            ),
+            _SwitchData(
+              '마케팅 알림',
+              '신기능 안내',
+              _values[NotificationKeys.marketing] ?? false,
+              (v) => _toggle(NotificationKeys.marketing, v),
+            ),
+          ],
+        ),
+        SizedBox(height: 16.h),
+      ],
     );
   }
 }
 
 class MyProfileEditScreen extends StatefulWidget {
-  const MyProfileEditScreen({super.key});
+  const MyProfileEditScreen({super.key, required this.profile});
+
+  final MyProfile profile;
 
   @override
   State<MyProfileEditScreen> createState() => _MyProfileEditScreenState();
 }
 
 class _MyProfileEditScreenState extends State<MyProfileEditScreen> {
-  final name = TextEditingController(text: '김지영');
-  final phone = TextEditingController(text: '010-1234-5678');
+  static const _relations = ['딸', '아들', '며느리', '사위', '손주', '손녀', '기타'];
+
+  late final TextEditingController name =
+      TextEditingController(text: widget.profile.name);
+  late final TextEditingController phone =
+      TextEditingController(text: widget.profile.formattedPhone);
   Uint8List? photoBytes;
-  String relation = '딸';
+  late String? relation = widget.profile.relation;
+  bool _saving = false;
 
   @override
   void dispose() {
     name.dispose();
     phone.dispose();
     super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (name.text.trim().isEmpty) {
+      _toast(context, '이름을 입력해 주세요.');
+      return;
+    }
+    setState(() => _saving = true);
+    try {
+      await _api.updateProfile(name: name.text.trim(), relation: relation);
+      if (!mounted) return;
+      Navigator.pop(context, true);
+    } catch (e) {
+      if (mounted) _toast(context, _errorText(e));
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _withdraw() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: _bg,
+        title: const Text('회원 탈퇴', style: TextStyle(fontWeight: FontWeight.w900)),
+        content: Text(
+          '탈퇴하면 패스키와 돌봄 기록이 모두 삭제돼요.\n정말 탈퇴하시겠어요?',
+          style: _caption(),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('취소', style: TextStyle(color: _muted)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text('탈퇴', style: TextStyle(color: Colors.red.shade400)),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+
+    try {
+      await _api.withdraw();
+      await SessionStore.clear();
+      if (!mounted) return;
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (_) => const SplashScreen()),
+        (route) => false,
+      );
+    } catch (e) {
+      if (mounted) _toast(context, _errorText(e));
+    }
   }
 
   @override
@@ -278,8 +542,8 @@ class _MyProfileEditScreenState extends State<MyProfileEditScreen> {
         children: [
           _TopHeader(
             title: '프로필 편집',
-            action: '저장',
-            onAction: () => Navigator.maybePop(context),
+            action: _saving ? '저장 중' : '저장',
+            onAction: _saving ? null : _save,
           ),
           Expanded(
             child: ListView(
@@ -288,7 +552,7 @@ class _MyProfileEditScreenState extends State<MyProfileEditScreen> {
                 SizedBox(height: 18.h),
                 Center(
                   child: _EditableProfilePhoto(
-                    label: '김',
+                    label: _initial(name.text),
                     imageBytes: photoBytes,
                     onChanged: (bytes) => setState(() => photoBytes = bytes),
                   ),
@@ -298,7 +562,8 @@ class _MyProfileEditScreenState extends State<MyProfileEditScreen> {
                 _InputField(
                   label: '전화번호',
                   controller: phone,
-                  keyboardType: TextInputType.phone,
+                  // 번호 변경은 SMS 재인증이 필요해 여기서는 수정할 수 없다.
+                  enabled: false,
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: const [
@@ -319,7 +584,7 @@ class _MyProfileEditScreenState extends State<MyProfileEditScreen> {
                 Wrap(
                   spacing: 8,
                   runSpacing: 8,
-                  children: ['딸', '아들', '며느리', '사위', '손주', '기타'].map((item) {
+                  children: _relations.map((item) {
                     return _ChoiceChipButton(
                       text: item,
                       selected: relation == item,
@@ -329,15 +594,19 @@ class _MyProfileEditScreenState extends State<MyProfileEditScreen> {
                 ),
                 SizedBox(height: 64.h),
                 Center(
-                  child: Text(
-                    '회원 탈퇴',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.red.shade400,
-                      fontWeight: FontWeight.w800,
+                  child: GestureDetector(
+                    onTap: _withdraw,
+                    child: Text(
+                      '회원 탈퇴',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.red.shade400,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                   ),
                 ),
+                SizedBox(height: 20.h),
               ],
             ),
           ),
@@ -348,8 +617,11 @@ class _MyProfileEditScreenState extends State<MyProfileEditScreen> {
   }
 }
 
+// ── 인형 설정 ────────────────────────────────────────
 class DollSettingsScreen extends StatelessWidget {
-  const DollSettingsScreen({super.key});
+  const DollSettingsScreen({super.key, required this.deviceId});
+
+  final int deviceId;
 
   @override
   Widget build(BuildContext context) {
@@ -358,134 +630,10 @@ class DollSettingsScreen extends StatelessWidget {
         children: [
           const _TopHeader(title: '인형 설정'),
           Expanded(
-            child: ListView(
-              physics: const BouncingScrollPhysics(),
-              children: [
-                SizedBox(height: 12.h),
-                Container(
-                  padding: const EdgeInsets.all(24),
-                  decoration: _cardDecoration(),
-                  child: Column(
-                    children: [
-                      const CircleAvatar(
-                        radius: 50,
-                        backgroundColor: Color(0xFFEFD6C5),
-                        child: Icon(
-                          Icons.smart_toy_outlined,
-                          size: 56,
-                          color: _brown,
-                        ),
-                      ),
-                      SizedBox(height: 14.h),
-                      const Text(
-                        '모리',
-                        style: TextStyle(
-                          fontSize: 18,
-                          color: _dark,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      const SizedBox(height: 5),
-                      Text('2026.05.08', style: _tiny()),
-                      SizedBox(height: 12.h),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFE7F6D8),
-                          borderRadius: BorderRadius.circular(99),
-                        ),
-                        child: const Text(
-                          '잘 연결되어 있어요',
-                          style: TextStyle(
-                            fontSize: 10,
-                            color: _green,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                SizedBox(height: 18.h),
-                _Label('배터리'),
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: _cardDecoration(),
-                  child: Column(
-                    children: [
-                      Row(
-                        children: [
-                          const Text(
-                            '78%',
-                            style: TextStyle(
-                              fontSize: 26,
-                              color: _dark,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                          const Spacer(),
-                          Text('약 14시간 남았어요', style: _tiny()),
-                        ],
-                      ),
-                      SizedBox(height: 12.h),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(99),
-                        child: const LinearProgressIndicator(
-                          value: .78,
-                          minHeight: 8,
-                          color: _green,
-                          backgroundColor: Color(0xFFEAE1D8),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                SizedBox(height: 18.h),
-                _Label('인형 목소리'),
-                _SectionCard(
-                  children: const [
-                    _VoiceRow(
-                      name: '김지영',
-                      subtitle: '딸 · 등록 완료',
-                      checked: true,
-                    ),
-                    _VoiceRow(
-                      name: '김민수',
-                      subtitle: '아들 · 학습 중...',
-                      progress: .52,
-                    ),
-                    _VoiceRow(name: '기본 목소리', subtitle: '아이 목소리'),
-                  ],
-                ),
-                SizedBox(height: 10.h),
-                OutlinedButton.icon(
-                  onPressed: () {},
-                  icon: const Icon(Icons.add),
-                  label: const Text('새 목소리 등록'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: _brown,
-                    side: const BorderSide(color: _brown),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
-                ),
-                SizedBox(height: 18.h),
-                _Label('그 외'),
-                _SectionCard(
-                  children: [
-                    _MenuRow(
-                      icon: Icons.volume_up_outlined,
-                      title: '인형 볼륨',
-                      subtitle: '크게',
-                      onTap: () => _push(context, const DollVolumeScreen()),
-                    ),
-                  ],
-                ),
-              ],
+            child: _AsyncView<DeviceSettings>(
+              load: () => _api.deviceSettings(deviceId),
+              builder: (context, device, reload) =>
+                  _DollSettingsBody(device: device, reload: reload),
             ),
           ),
           const _HomeIndicator(),
@@ -495,15 +643,203 @@ class DollSettingsScreen extends StatelessWidget {
   }
 }
 
+class _DollSettingsBody extends StatelessWidget {
+  const _DollSettingsBody({required this.device, required this.reload});
+
+  final DeviceSettings device;
+  final Future<void> Function() reload;
+
+  Future<void> _selectVoice(BuildContext context, DeviceVoice voice) async {
+    if (voice.isDefault) return;
+    if (!voice.isReady) {
+      _toast(context, '아직 학습 중인 목소리예요.');
+      return;
+    }
+    try {
+      await _api.setDefaultVoice(device.deviceId, voice.voiceId);
+      await reload();
+    } catch (e) {
+      if (context.mounted) _toast(context, _errorText(e));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final paired = device.pairedAt;
+    return ListView(
+      physics: const BouncingScrollPhysics(),
+      children: [
+        SizedBox(height: 12.h),
+        Container(
+          padding: const EdgeInsets.all(24),
+          decoration: _cardDecoration(),
+          child: Column(
+            children: [
+              const CircleAvatar(
+                radius: 50,
+                backgroundColor: Color(0xFFEFD6C5),
+                child: Icon(Icons.smart_toy_outlined, size: 56, color: _brown),
+              ),
+              SizedBox(height: 14.h),
+              Text(
+                device.name,
+                style: const TextStyle(
+                  fontSize: 18,
+                  color: _dark,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 5),
+              if (paired != null)
+                Text(
+                  '${paired.year}.${paired.month.toString().padLeft(2, '0')}.${paired.day.toString().padLeft(2, '0')}',
+                  style: _tiny(),
+                ),
+              SizedBox(height: 12.h),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: device.connected
+                      ? const Color(0xFFE7F6D8)
+                      : const Color(0xFFF1E4D9),
+                  borderRadius: BorderRadius.circular(99),
+                ),
+                child: Text(
+                  device.connected ? '잘 연결되어 있어요' : '연결이 끊겼어요',
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: device.connected ? _green : _brown,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        SizedBox(height: 18.h),
+        _Label('배터리'),
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: _cardDecoration(),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  Text(
+                    '${device.batteryLevel}%',
+                    style: const TextStyle(
+                      fontSize: 26,
+                      color: _dark,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const Spacer(),
+                  Text('약 ${device.batteryHoursLeft}시간 남았어요', style: _tiny()),
+                ],
+              ),
+              SizedBox(height: 12.h),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(99),
+                child: LinearProgressIndicator(
+                  value: device.batteryLevel / 100,
+                  minHeight: 8,
+                  color: device.batteryLevel <= 20 ? _yellow : _green,
+                  backgroundColor: const Color(0xFFEAE1D8),
+                ),
+              ),
+            ],
+          ),
+        ),
+        SizedBox(height: 18.h),
+        _Label('인형 목소리'),
+        if (device.voices.isEmpty)
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: _cardDecoration(),
+            child: Text('아직 등록된 목소리가 없어요.', style: _caption()),
+          )
+        else
+          _SectionCard(
+            children: device.voices
+                .map(
+                  (voice) => _VoiceRow(
+                    name: voice.name,
+                    subtitle: voice.statusText,
+                    checked: voice.isDefault,
+                    progress: voice.isTraining ? voice.progress / 100 : null,
+                    onTap: () => _selectVoice(context, voice),
+                  ),
+                )
+                .toList(),
+          ),
+        SizedBox(height: 10.h),
+        OutlinedButton.icon(
+          onPressed: () => _toast(context, '목소리 등록은 음성 녹음 화면에서 준비 중이에요.'),
+          icon: const Icon(Icons.add),
+          label: const Text('새 목소리 등록'),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: _brown,
+            side: const BorderSide(color: _brown),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        ),
+        SizedBox(height: 18.h),
+        _Label('그 외'),
+        _SectionCard(
+          children: [
+            _MenuRow(
+              icon: Icons.volume_up_outlined,
+              title: '인형 볼륨',
+              subtitle: '${device.volumeText} (${device.volume}%)',
+              onTap: () => _openAndReload(
+                context,
+                DollVolumeScreen(
+                  deviceId: device.deviceId,
+                  initialVolume: device.volume,
+                ),
+                reload,
+              ),
+            ),
+          ],
+        ),
+        SizedBox(height: 16.h),
+      ],
+    );
+  }
+}
+
 class DollVolumeScreen extends StatefulWidget {
-  const DollVolumeScreen({super.key});
+  const DollVolumeScreen({
+    super.key,
+    required this.deviceId,
+    required this.initialVolume,
+  });
+
+  final int deviceId;
+  final int initialVolume;
 
   @override
   State<DollVolumeScreen> createState() => _DollVolumeScreenState();
 }
 
 class _DollVolumeScreenState extends State<DollVolumeScreen> {
-  double volume = 70;
+  late double volume = widget.initialVolume.toDouble().clamp(30, 95);
+  bool _saving = false;
+
+  Future<void> _save() async {
+    setState(() => _saving = true);
+    try {
+      await _api.updateDeviceSettings(widget.deviceId, volume: volume.round());
+      if (!mounted) return;
+      Navigator.pop(context, true);
+    } catch (e) {
+      if (mounted) _toast(context, _errorText(e));
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -512,8 +848,8 @@ class _DollVolumeScreenState extends State<DollVolumeScreen> {
         children: [
           _TopHeader(
             title: '인형 볼륨',
-            action: '저장',
-            onAction: () => Navigator.maybePop(context),
+            action: _saving ? '저장 중' : '저장',
+            onAction: _saving ? null : _save,
           ),
           Expanded(
             child: ListView(
@@ -544,24 +880,6 @@ class _DollVolumeScreenState extends State<DollVolumeScreen> {
                         inactiveColor: _line,
                         onChanged: (v) => setState(() => volume = v),
                       ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
-                        ),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFFF3E5),
-                          borderRadius: BorderRadius.circular(99),
-                        ),
-                        child: const Text(
-                          '지금 인형으로 들어보기',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: _brown,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                      ),
                     ],
                   ),
                 ),
@@ -589,92 +907,154 @@ class _DollVolumeScreenState extends State<DollVolumeScreen> {
   }
 }
 
+// ── 어르신 정보 ──────────────────────────────────────
 class ElderInfoScreen extends StatelessWidget {
-  const ElderInfoScreen({super.key});
+  const ElderInfoScreen({super.key, required this.userId});
+
+  final int userId;
 
   @override
   Widget build(BuildContext context) {
     return _PhoneFrame(
-      child: Column(
-        children: [
-          _TopHeader(
-            title: '어머님 정보',
-            action: '편집',
-            onAction: () => _push(context, const ElderInfoEditScreen()),
-          ),
-          Expanded(
-            child: ListView(
-              physics: const BouncingScrollPhysics(),
-              children: [
-                SizedBox(height: 12.h),
-                Container(
-                  padding: const EdgeInsets.all(18),
-                  decoration: _cardDecoration(),
-                  child: Row(
-                    children: const [
-                      _Avatar(label: '박', size: 62, color: Color(0xFFDCC7B6)),
-                      SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              '박순자',
-                              style: TextStyle(
-                                fontSize: 17,
-                                color: _dark,
-                                fontWeight: FontWeight.w900,
-                              ),
-                            ),
-                            SizedBox(height: 6),
-                            Text(
-                              '여성 · 1952년 3월 15일 (만 74세)',
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: _muted,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ],
+      child: _AsyncView<ElderUser>(
+        load: () => _api.user(userId),
+        builder: (context, user, reload) => Column(
+          children: [
+            _TopHeader(
+              title: '${user.name}님 정보',
+              action: '편집',
+              onAction: () => _openAndReload(
+                context,
+                ElderInfoEditScreen(user: user),
+                reload,
+              ),
+            ),
+            Expanded(
+              child: ListView(
+                physics: const BouncingScrollPhysics(),
+                children: [
+                  SizedBox(height: 12.h),
+                  Container(
+                    padding: const EdgeInsets.all(18),
+                    decoration: _cardDecoration(),
+                    child: Row(
+                      children: [
+                        _Avatar(
+                          label: _initial(user.name),
+                          size: 62,
+                          color: const Color(0xFFDCC7B6),
                         ),
-                      ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                user.name,
+                                style: const TextStyle(
+                                  fontSize: 17,
+                                  color: _dark,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                [
+                                  user.genderText,
+                                  user.birthText,
+                                  if (user.age != null) '만 ${user.age}세',
+                                ].join(' · '),
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  color: _muted,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  SizedBox(height: 18.h),
+                  _Label('기본 정보'),
+                  _InfoCard(
+                    rows: [
+                      ('이름', user.name),
+                      ('성별', user.genderText),
+                      ('생년월일', user.birthText),
                     ],
                   ),
-                ),
-                SizedBox(height: 18.h),
-                _Label('기본 정보'),
-                const _InfoCard(
-                  rows: [('이름', '박순자'), ('성별', '여성'), ('생년월일', '1952년 3월 15일')],
-                ),
-              ],
+                  if (user.note.isNotEmpty) ...[
+                    SizedBox(height: 16.h),
+                    _Label('메모'),
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: _cardDecoration(),
+                      child: Text(user.note, style: _caption()),
+                    ),
+                  ],
+                ],
+              ),
             ),
-          ),
-          const _HomeIndicator(),
-        ],
+            const _HomeIndicator(),
+          ],
+        ),
       ),
     );
   }
 }
 
 class ElderInfoEditScreen extends StatefulWidget {
-  const ElderInfoEditScreen({super.key});
+  const ElderInfoEditScreen({super.key, required this.user});
+
+  final ElderUser user;
 
   @override
   State<ElderInfoEditScreen> createState() => _ElderInfoEditScreenState();
 }
 
 class _ElderInfoEditScreenState extends State<ElderInfoEditScreen> {
-  final name = TextEditingController(text: '박순자');
+  late final TextEditingController name =
+      TextEditingController(text: widget.user.name);
+  late final TextEditingController note =
+      TextEditingController(text: widget.user.note);
   Uint8List? photoBytes;
-  String gender = '여성';
-  int year = 1952;
-  int month = 3;
-  int day = 15;
+  late String gender = widget.user.gender == 'male' ? '남성' : '여성';
+  late int year = widget.user.birthDate?.year ?? 1950;
+  late int month = widget.user.birthDate?.month ?? 1;
+  late int day = widget.user.birthDate?.day ?? 1;
+  bool _saving = false;
 
   @override
   void dispose() {
     name.dispose();
+    note.dispose();
     super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (name.text.trim().isEmpty) {
+      _toast(context, '이름을 입력해 주세요.');
+      return;
+    }
+    setState(() => _saving = true);
+    try {
+      await _api.updateUser(
+        widget.user.userId,
+        name: name.text.trim(),
+        gender: gender == '남성' ? 'male' : 'female',
+        // 말일이 없는 달을 고르면 DateTime이 다음 달로 넘어가므로 미리 맞춘다.
+        birthDate: DateTime(year, month, day.clamp(1, _daysInMonth(year, month))),
+        note: note.text.trim(),
+      );
+      if (!mounted) return;
+      Navigator.pop(context, true);
+    } catch (e) {
+      if (mounted) _toast(context, _errorText(e));
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
   @override
@@ -684,8 +1064,8 @@ class _ElderInfoEditScreenState extends State<ElderInfoEditScreen> {
         children: [
           _TopHeader(
             title: '프로필 편집',
-            action: '저장',
-            onAction: () => Navigator.maybePop(context),
+            action: _saving ? '저장 중' : '저장',
+            onAction: _saving ? null : _save,
           ),
           Expanded(
             child: ListView(
@@ -694,7 +1074,7 @@ class _ElderInfoEditScreenState extends State<ElderInfoEditScreen> {
                 SizedBox(height: 10.h),
                 Center(
                   child: _EditableProfilePhoto(
-                    label: '박',
+                    label: _initial(name.text),
                     imageBytes: photoBytes,
                     onChanged: (bytes) => setState(() => photoBytes = bytes),
                   ),
@@ -727,7 +1107,15 @@ class _ElderInfoEditScreenState extends State<ElderInfoEditScreen> {
                   onYear: (v) => setState(() => year += v),
                   onMonth: (v) =>
                       setState(() => month = (month + v).clamp(1, 12)),
-                  onDay: (v) => setState(() => day = (day + v).clamp(1, 31)),
+                  onDay: (v) => setState(
+                    () => day = (day + v).clamp(1, _daysInMonth(year, month)),
+                  ),
+                ),
+                SizedBox(height: 16.h),
+                _InputField(
+                  label: '메모',
+                  controller: note,
+                  hint: '좋아하시는 것, 주의할 점 등',
                 ),
               ],
             ),
@@ -739,69 +1127,135 @@ class _ElderInfoEditScreenState extends State<ElderInfoEditScreen> {
   }
 }
 
+int _daysInMonth(int year, int month) =>
+    DateTime(year, month + 1, 0).day; // 다음 달 0일 = 이번 달 말일
+
+// ── 가족 멤버 ────────────────────────────────────────
 class FamilyMembersScreen extends StatelessWidget {
-  const FamilyMembersScreen({super.key});
+  const FamilyMembersScreen({super.key, required this.userId});
+
+  final int userId;
+
+  Future<void> _remove(
+    BuildContext context,
+    FamilyMember member,
+    Future<void> Function() reload,
+  ) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: _bg,
+        title: const Text('가족 제거', style: TextStyle(fontWeight: FontWeight.w900)),
+        content: Text(
+          '${member.name}님을 가족에서 제거할까요?\n등록한 인형 목소리도 함께 지워져요.',
+          style: _caption(),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('취소', style: TextStyle(color: _muted)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text('제거', style: TextStyle(color: Colors.red.shade400)),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+
+    try {
+      await _api.removeFamilyMember(member.protectorId);
+      await reload();
+    } catch (e) {
+      if (context.mounted) _toast(context, _errorText(e));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return _PhoneFrame(
-      child: Column(
-        children: [
-          _TopHeader(
-            title: '가족 멤버',
-            iconAction: Icons.share_outlined,
-            onAction: () => _push(context, const FamilyInviteScreen()),
-          ),
-          Expanded(
-            child: ListView(
-              physics: const BouncingScrollPhysics(),
-              children: [
-                Text(
-                  '박순자님을 함께 돌보는 가족이에요.\n새 가족 초대하기를 눌러 가족과 함께해주세요.',
-                  style: _caption(),
-                ),
-                SizedBox(height: 12.h),
-                Row(
-                  children: const [
-                    Expanded(
-                      child: _StatBox(title: '가족', value: '4명'),
-                    ),
-                    SizedBox(width: 8),
-                    Expanded(
-                      child: _StatBox(title: '목소리', value: '1개'),
-                    ),
-                    SizedBox(width: 8),
-                    Expanded(
-                      child: _StatBox(title: '생성된 코드', value: '1개'),
-                    ),
-                  ],
-                ),
-                SizedBox(height: 12.h),
-                _SectionCard(
-                  children: const [
-                    _FamilyRow(name: '김지영', role: '딸', badges: ['나', '주보호자']),
-                    _FamilyRow(name: '김민수', role: '아들'),
-                    _FamilyRow(name: '박서연', role: '손녀'),
-                    _FamilyRow(name: '김영호', role: '사위'),
-                  ],
-                ),
-                SizedBox(height: 12.h),
-                ElevatedButton.icon(
-                  onPressed: () => _push(context, const FamilyInviteScreen()),
-                  icon: const Icon(Icons.person_add_alt),
-                  label: const Text('새 가족 초대하기'),
-                  style: _primaryButtonStyle(),
-                ),
-              ],
+      child: _AsyncView<FamilyMembers>(
+        load: () => _api.familyMembers(userId),
+        builder: (context, family, reload) => Column(
+          children: [
+            _TopHeader(
+              title: '가족 멤버',
+              iconAction: Icons.share_outlined,
+              onAction: () => _push(context, const FamilyInviteScreen()),
             ),
-          ),
-          const _HomeIndicator(),
-        ],
+            Expanded(
+              child: ListView(
+                physics: const BouncingScrollPhysics(),
+                children: [
+                  Text(
+                    family.iAmPrimary
+                        ? '함께 돌보는 가족이에요.\n가족을 길게 눌러 연결을 해제할 수 있어요.'
+                        : '함께 돌보는 가족이에요.',
+                    style: _caption(),
+                  ),
+                  SizedBox(height: 12.h),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _StatBox(
+                          title: '가족',
+                          value: '${family.familyCount}명',
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _StatBox(
+                          title: '목소리',
+                          value: '${family.voiceCount}개',
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _StatBox(
+                          title: '생성된 코드',
+                          value: '${family.inviteCodeCount}개',
+                        ),
+                      ),
+                    ],
+                  ),
+                  SizedBox(height: 12.h),
+                  _SectionCard(
+                    children: family.members
+                        .map(
+                          (member) => _FamilyRow(
+                            name: member.name,
+                            role: member.relation ?? '가족',
+                            badges: member.badges,
+                            // 주보호자만, 본인이 아닌 가족을 제거할 수 있다.
+                            onLongPress: family.iAmPrimary &&
+                                    !member.isMe &&
+                                    !member.isPrimary
+                                ? () => _remove(context, member, reload)
+                                : null,
+                          ),
+                        )
+                        .toList(),
+                  ),
+                  SizedBox(height: 12.h),
+                  ElevatedButton.icon(
+                    onPressed: () => _push(context, const FamilyInviteScreen()),
+                    icon: const Icon(Icons.person_add_alt),
+                    label: const Text('새 가족 초대하기'),
+                    style: _primaryButtonStyle(),
+                  ),
+                ],
+              ),
+            ),
+            const _HomeIndicator(),
+          ],
+        ),
       ),
     );
   }
 }
 
+/// 초대 코드 발급 API는 아직 없어서 화면만 유지한다(코드 플로우 붙일 때 연결).
 class FamilyInviteScreen extends StatefulWidget {
   const FamilyInviteScreen({super.key});
 
@@ -922,74 +1376,100 @@ class _FamilyInviteScreenState extends State<FamilyInviteScreen> {
   }
 }
 
-class NotificationSettingsScreen extends StatefulWidget {
+// ── 알림 설정 ────────────────────────────────────────
+class NotificationSettingsScreen extends StatelessWidget {
   const NotificationSettingsScreen({super.key});
-
-  @override
-  State<NotificationSettingsScreen> createState() =>
-      _NotificationSettingsScreenState();
-}
-
-class _NotificationSettingsScreenState
-    extends State<NotificationSettingsScreen> {
-  final values = <String, bool>{
-    '감정 변화': true,
-    '기기 연결 해제': true,
-    '약 미복용': true,
-    '어머님 음성 요청': true,
-    '메시지 전달 완료': false,
-    '목소리 학습 완료': true,
-    '데일리 리포트': true,
-    '주간 리포트': true,
-    '앱 업데이트': false,
-  };
 
   @override
   Widget build(BuildContext context) {
     return _PhoneFrame(
-      child: Column(
-        children: [
-          _TopHeader(
-            title: '알림 설정',
-            action: '저장',
-            onAction: () => Navigator.maybePop(context),
-          ),
-          Expanded(
-            child: ListView(
-              physics: const BouncingScrollPhysics(),
-              children: [
-                Text('받고 싶은 알림만 켜두세요.\n종류별로 따로 설정할 수 있어요.', style: _caption()),
-                SizedBox(height: 18.h),
-                _NotificationGroup(
-                  title: '긴급',
-                  names: const ['감정 변화', '기기 연결 해제', '약 미복용'],
-                  values: values,
-                  onChanged: _setValue,
-                ),
-                _NotificationGroup(
-                  title: '일상',
-                  names: const ['어머님 음성 요청', '메시지 전달 완료', '목소리 학습 완료'],
-                  values: values,
-                  onChanged: _setValue,
-                ),
-                _NotificationGroup(
-                  title: '리포트',
-                  names: const ['데일리 리포트', '주간 리포트'],
-                  values: values,
-                  onChanged: _setValue,
-                ),
-                _NotificationGroup(
-                  title: '기타',
-                  names: const ['앱 업데이트'],
-                  values: values,
-                  onChanged: _setValue,
-                ),
-              ],
-            ),
-          ),
-          const _HomeIndicator(),
-        ],
+      child: _AsyncView<MyProfile>(
+        load: _api.myProfile,
+        builder: (context, profile, reload) =>
+            _NotificationSettingsBody(profile: profile),
       ),
+    );
+  }
+}
+
+class _NotificationSettingsBody extends StatefulWidget {
+  const _NotificationSettingsBody({required this.profile});
+
+  final MyProfile profile;
+
+  @override
+  State<_NotificationSettingsBody> createState() =>
+      _NotificationSettingsBodyState();
+}
+
+class _NotificationSettingsBodyState extends State<_NotificationSettingsBody> {
+  /// 화면 라벨 → 현재 값. 저장할 때 백엔드 필드명으로 바꿔 보낸다.
+  late final Map<String, bool> values = {
+    for (final entry in NotificationKeys.byLabel.entries)
+      entry.key: widget.profile.notifications[entry.value] ?? false,
+  };
+  bool _saving = false;
+
+  Future<void> _save() async {
+    setState(() => _saving = true);
+    try {
+      await _api.updateNotificationSettings({
+        for (final entry in NotificationKeys.byLabel.entries)
+          entry.value: values[entry.key] ?? false,
+      });
+      if (!mounted) return;
+      Navigator.pop(context, true);
+    } catch (e) {
+      if (mounted) _toast(context, _errorText(e));
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        _TopHeader(
+          title: '알림 설정',
+          action: _saving ? '저장 중' : '저장',
+          onAction: _saving ? null : _save,
+        ),
+        Expanded(
+          child: ListView(
+            physics: const BouncingScrollPhysics(),
+            children: [
+              Text('받고 싶은 알림만 켜두세요.\n종류별로 따로 설정할 수 있어요.', style: _caption()),
+              SizedBox(height: 18.h),
+              _NotificationGroup(
+                title: '긴급',
+                names: const ['감정 변화', '기기 연결 해제', '약 미복용'],
+                values: values,
+                onChanged: _setValue,
+              ),
+              _NotificationGroup(
+                title: '일상',
+                names: const ['어머님 음성 요청', '메시지 전달 완료', '목소리 학습 완료'],
+                values: values,
+                onChanged: _setValue,
+              ),
+              _NotificationGroup(
+                title: '리포트',
+                names: const ['데일리 리포트', '주간 리포트'],
+                values: values,
+                onChanged: _setValue,
+              ),
+              _NotificationGroup(
+                title: '기타',
+                names: const ['앱 업데이트'],
+                values: values,
+                onChanged: _setValue,
+              ),
+            ],
+          ),
+        ),
+        const _HomeIndicator(),
+      ],
     );
   }
 
@@ -997,230 +1477,335 @@ class _NotificationSettingsScreenState
       setState(() => values[name] = value);
 }
 
-class QuietHoursScreen extends StatefulWidget {
-  const QuietHoursScreen({super.key});
+// ── 방해 금지 시간 ───────────────────────────────────
+class QuietHoursScreen extends StatelessWidget {
+  const QuietHoursScreen({super.key, required this.deviceId});
 
-  @override
-  State<QuietHoursScreen> createState() => _QuietHoursScreenState();
-}
-
-class _QuietHoursScreenState extends State<QuietHoursScreen> {
-  bool enabled = true;
-  bool urgent = true;
-  bool wake = true;
-  int start = 23;
-  int end = 7;
+  final int deviceId;
 
   @override
   Widget build(BuildContext context) {
     return _PhoneFrame(
-      child: Column(
-        children: [
-          _TopHeader(
-            title: '방해 금지 시간',
-            action: '저장',
-            onAction: () => Navigator.maybePop(context),
-          ),
-          Expanded(
-            child: ListView(
-              physics: const BouncingScrollPhysics(),
-              children: [
-                Text('이 시간엔 인형이 먼저 말을 걸지 않아요.', style: _caption()),
-                SizedBox(height: 18.h),
-                _SectionCard(
+      child: _AsyncView<DndSettings>(
+        load: () => _api.dnd(deviceId),
+        builder: (context, dnd, reload) =>
+            _QuietHoursBody(deviceId: deviceId, dnd: dnd),
+      ),
+    );
+  }
+}
+
+class _QuietHoursBody extends StatefulWidget {
+  const _QuietHoursBody({required this.deviceId, required this.dnd});
+
+  final int deviceId;
+  final DndSettings dnd;
+
+  @override
+  State<_QuietHoursBody> createState() => _QuietHoursBodyState();
+}
+
+class _QuietHoursBodyState extends State<_QuietHoursBody> {
+  late bool enabled = widget.dnd.enabled;
+  late bool urgent = widget.dnd.allowUrgentAlert;
+  late bool wake = widget.dnd.allowWakeWord;
+  late int start = widget.dnd.startHour;
+  late int end = widget.dnd.endHour;
+  bool _saving = false;
+
+  Future<void> _save() async {
+    if (start == end) {
+      _toast(context, '시작과 끝 시각을 다르게 설정해 주세요.');
+      return;
+    }
+    setState(() => _saving = true);
+    try {
+      await _api.updateDnd(
+        widget.deviceId,
+        enabled: enabled,
+        startHour: start,
+        endHour: end,
+        allowUrgentAlert: urgent,
+        allowWakeWord: wake,
+      );
+      if (!mounted) return;
+      Navigator.pop(context, true);
+    } catch (e) {
+      if (mounted) _toast(context, _errorText(e));
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        _TopHeader(
+          title: '방해 금지 시간',
+          action: _saving ? '저장 중' : '저장',
+          onAction: _saving ? null : _save,
+        ),
+        Expanded(
+          child: ListView(
+            physics: const BouncingScrollPhysics(),
+            children: [
+              Text('이 시간엔 인형이 먼저 말을 걸지 않아요.', style: _caption()),
+              SizedBox(height: 18.h),
+              _SectionCard(
+                children: [
+                  _SwitchLine(
+                    icon: Icons.nightlight_round,
+                    title: '방해 금지 사용',
+                    subtitle: '${_hourText(start)} ~ ${_hourText(end)}',
+                    value: enabled,
+                    onChanged: (v) => setState(() => enabled = v),
+                  ),
+                ],
+              ),
+              SizedBox(height: 18.h),
+              _Label('시간 설정'),
+              Container(
+                padding: const EdgeInsets.all(18),
+                decoration: _cardDecoration(),
+                child: Column(
                   children: [
-                    _SwitchLine(
-                      icon: Icons.nightlight_round,
-                      title: '방해 금지 사용',
-                      subtitle: '오후 11시 ~ 오전 7시',
-                      value: enabled,
-                      onChanged: (v) => setState(() => enabled = v),
-                    ),
-                  ],
-                ),
-                SizedBox(height: 18.h),
-                _Label('시간 설정'),
-                Container(
-                  padding: const EdgeInsets.all(18),
-                  decoration: _cardDecoration(),
-                  child: Column(
-                    children: [
-                      Row(
-                        children: const [
-                          Expanded(
-                            child: Center(
-                              child: Text(
-                                '시작',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: _muted,
-                                  fontWeight: FontWeight.w800,
-                                ),
+                    Row(
+                      children: const [
+                        Expanded(
+                          child: Center(
+                            child: Text(
+                              '시작',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: _muted,
+                                fontWeight: FontWeight.w800,
                               ),
                             ),
                           ),
-                          Expanded(
-                            child: Center(
-                              child: Text(
-                                '끝',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: _muted,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      SizedBox(height: 12.h),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _HourStepper(
-                              hour: start,
-                              onAdd: () =>
-                                  setState(() => start = (start + 1) % 24),
-                              onSub: () =>
-                                  setState(() => start = (start + 23) % 24),
-                            ),
-                          ),
-                          const Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 14),
-                            child: Icon(
-                              Icons.arrow_forward,
-                              color: _muted,
-                              size: 18,
-                            ),
-                          ),
-                          Expanded(
-                            child: _HourStepper(
-                              hour: end,
-                              onAdd: () => setState(() => end = (end + 1) % 24),
-                              onSub: () =>
-                                  setState(() => end = (end + 23) % 24),
-                            ),
-                          ),
-                        ],
-                      ),
-                      SizedBox(height: 16.h),
-                      Text(
-                        '${_hourText(start)}부터 다음날 ${_hourText(end)}까지',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: _brown,
-                          fontWeight: FontWeight.w900,
                         ),
-                      ),
-                    ],
-                  ),
-                ),
-                SizedBox(height: 18.h),
-                _Label('예외'),
-                _SectionCard(
-                  children: [
-                    _SwitchLine(
-                      title: '긴급 알림은 내게 받기',
-                      subtitle: '급격한 감정 변화·기기 점검 알림은 받아요',
-                      value: urgent,
-                      onChanged: (v) => setState(() => urgent = v),
+                        Expanded(
+                          child: Center(
+                            child: Text(
+                              '끝',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: _muted,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                    _SwitchLine(
-                      title: '어머님이 "모리야" 부르시면 깨우기',
-                      subtitle: '이 시간에도 부르시면 모리가 응답해드려요',
-                      value: wake,
-                      onChanged: (v) => setState(() => wake = v),
+                    SizedBox(height: 12.h),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _HourStepper(
+                            hour: start,
+                            onAdd: () => setState(() => start = (start + 1) % 24),
+                            onSub: () =>
+                                setState(() => start = (start + 23) % 24),
+                          ),
+                        ),
+                        const Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 14),
+                          child:
+                              Icon(Icons.arrow_forward, color: _muted, size: 18),
+                        ),
+                        Expanded(
+                          child: _HourStepper(
+                            hour: end,
+                            onAdd: () => setState(() => end = (end + 1) % 24),
+                            onSub: () => setState(() => end = (end + 23) % 24),
+                          ),
+                        ),
+                      ],
+                    ),
+                    SizedBox(height: 16.h),
+                    Text(
+                      '${_hourText(start)}부터 다음날 ${_hourText(end)}까지',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: _brown,
+                        fontWeight: FontWeight.w900,
+                      ),
                     ),
                   ],
                 ),
-              ],
-            ),
+              ),
+              SizedBox(height: 18.h),
+              _Label('예외'),
+              _SectionCard(
+                children: [
+                  _SwitchLine(
+                    title: '긴급 알림은 내게 받기',
+                    subtitle: '급격한 감정 변화·기기 점검 알림은 받아요',
+                    value: urgent,
+                    onChanged: (v) => setState(() => urgent = v),
+                  ),
+                  _SwitchLine(
+                    title: '어머님이 "모리야" 부르시면 깨우기',
+                    subtitle: '이 시간에도 부르시면 모리가 응답해드려요',
+                    value: wake,
+                    onChanged: (v) => setState(() => wake = v),
+                  ),
+                ],
+              ),
+            ],
           ),
-          const _HomeIndicator(),
-        ],
-      ),
+        ),
+        const _HomeIndicator(),
+      ],
     );
   }
 }
 
-class MedicationTimeScreen extends StatefulWidget {
-  const MedicationTimeScreen({super.key});
+// ── 약 복용 시간 ─────────────────────────────────────
+class MedicationTimeScreen extends StatelessWidget {
+  const MedicationTimeScreen({super.key, required this.deviceId});
 
-  @override
-  State<MedicationTimeScreen> createState() => _MedicationTimeScreenState();
-}
-
-class _MedicationTimeScreenState extends State<MedicationTimeScreen> {
-  bool check = true;
-  final meds = <_Medication>[
-    _Medication('아침 혈압약', '08:00', '식후'),
-    _Medication('저녁 영양제', '19:00', '식후'),
-  ];
+  final int deviceId;
 
   @override
   Widget build(BuildContext context) {
     return _PhoneFrame(
-      child: Column(
-        children: [
-          _TopHeader(
-            title: '약 복용 시간',
-            action: '저장',
-            onAction: () => Navigator.maybePop(context),
-          ),
-          Expanded(
-            child: ListView(
-              physics: const BouncingScrollPhysics(),
-              children: [
-                Text('설정한 시간에 인형이 약 드실 시간이라고 말씀드려요.', style: _caption()),
-                SizedBox(height: 28.h),
-                _Label('오늘의 약'),
-                for (final med in meds)
-                  _MedicationTile(
-                    med: med,
-                    onDelete: () => setState(() => meds.remove(med)),
-                  ),
-                TextButton.icon(
-                  onPressed: _showAddMedicine,
-                  icon: const Icon(Icons.add),
-                  label: const Text('약 추가하기'),
-                  style: TextButton.styleFrom(foregroundColor: _brown),
-                ),
-                SizedBox(height: 18.h),
-                _Label('알림 방법'),
-                _SectionCard(
-                  children: [
-                    _SwitchLine(
-                      title: '드셨는지 인형이 확인하기',
-                      subtitle: '"약 드셨어요?" 라고 여쭤봐요',
-                      value: check,
-                      onChanged: (v) => setState(() => check = v),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          const _HomeIndicator(),
-        ],
+      child: _AsyncView<MedicationList>(
+        load: () => _api.medications(deviceId),
+        builder: (context, list, reload) => _MedicationBody(
+          deviceId: deviceId,
+          list: list,
+          reload: reload,
+        ),
       ),
     );
   }
+}
 
-  void _showAddMedicine() {
-    showModalBottomSheet(
+class _MedicationBody extends StatefulWidget {
+  const _MedicationBody({
+    required this.deviceId,
+    required this.list,
+    required this.reload,
+  });
+
+  final int deviceId;
+  final MedicationList list;
+  final Future<void> Function() reload;
+
+  @override
+  State<_MedicationBody> createState() => _MedicationBodyState();
+}
+
+class _MedicationBodyState extends State<_MedicationBody> {
+  late bool check = widget.list.medicationCheck;
+
+  Future<void> _setCheck(bool value) async {
+    final previous = check;
+    setState(() => check = value);
+    try {
+      await _api.updateDeviceSettings(widget.deviceId, medicationCheck: value);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => check = previous);
+      _toast(context, _errorText(e));
+    }
+  }
+
+  Future<void> _delete(Medication med) async {
+    try {
+      await _api.deleteMedication(med.medicationId);
+      await widget.reload();
+    } catch (e) {
+      if (mounted) _toast(context, _errorText(e));
+    }
+  }
+
+  Future<void> _add() async {
+    final draft = await showModalBottomSheet<_MedicationDraft>(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (_) =>
-          _AddMedicationSheet(onAdd: (med) => setState(() => meds.add(med))),
+      builder: (_) => const _AddMedicationSheet(),
+    );
+    if (draft == null) return;
+    try {
+      await _api.addMedication(
+        widget.deviceId,
+        name: draft.name,
+        time: draft.time,
+        timing: draft.timing,
+      );
+      await widget.reload();
+    } catch (e) {
+      if (mounted) _toast(context, _errorText(e));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final meds = widget.list.items;
+    return Column(
+      children: [
+        _TopHeader(
+          title: '약 복용 시간',
+          action: '완료',
+          onAction: () => Navigator.maybePop(context),
+        ),
+        Expanded(
+          child: ListView(
+            physics: const BouncingScrollPhysics(),
+            children: [
+              Text('설정한 시간에 인형이 약 드실 시간이라고 말씀드려요.', style: _caption()),
+              SizedBox(height: 28.h),
+              _Label('오늘의 약'),
+              if (meds.isEmpty)
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: _cardDecoration(),
+                  child: Text('아직 등록한 약이 없어요.', style: _caption()),
+                ),
+              for (final med in meds)
+                _MedicationTile(med: med, onDelete: () => _delete(med)),
+              TextButton.icon(
+                onPressed: _add,
+                icon: const Icon(Icons.add),
+                label: const Text('약 추가하기'),
+                style: TextButton.styleFrom(foregroundColor: _brown),
+              ),
+              SizedBox(height: 18.h),
+              _Label('알림 방법'),
+              _SectionCard(
+                children: [
+                  _SwitchLine(
+                    title: '드셨는지 인형이 확인하기',
+                    subtitle: '"약 드셨어요?" 라고 여쭤봐요',
+                    value: check,
+                    onChanged: _setCheck,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const _HomeIndicator(),
+      ],
     );
   }
 }
 
-class _AddMedicationSheet extends StatefulWidget {
-  const _AddMedicationSheet({required this.onAdd});
+/// 시트에서 입력받은 값(저장은 호출한 화면이 한다).
+class _MedicationDraft {
+  _MedicationDraft(this.name, this.time, this.timing);
 
-  final ValueChanged<_Medication> onAdd;
+  final String name;
+  final String time; // "HH:MM"
+  final String timing;
+}
+
+class _AddMedicationSheet extends StatefulWidget {
+  const _AddMedicationSheet();
 
   @override
   State<_AddMedicationSheet> createState() => _AddMedicationSheetState();
@@ -1228,7 +1813,8 @@ class _AddMedicationSheet extends StatefulWidget {
 
 class _AddMedicationSheetState extends State<_AddMedicationSheet> {
   final name = TextEditingController();
-  int hour = 8;
+  bool isAm = true;
+  int hour = 8; // 1~12
   int minute = 0;
   String timing = '식후';
 
@@ -1238,147 +1824,255 @@ class _AddMedicationSheetState extends State<_AddMedicationSheet> {
     super.dispose();
   }
 
+  /// 오전/오후 + 12시간 표기를 백엔드가 받는 24시간 "HH:MM"으로.
+  String get _time24 {
+    var h = hour % 12;
+    if (!isAm) h += 12;
+    return '${h.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}';
+  }
+
   @override
   Widget build(BuildContext context) {
     final canAdd = name.text.trim().isNotEmpty;
 
-    return StatefulBuilder(
-      builder: (context, setSheetState) {
-        return Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(context).viewInsets.bottom,
-          ),
-          child: Container(
-            padding: const EdgeInsets.fromLTRB(24, 18, 24, 24),
-            decoration: const BoxDecoration(
-              color: _bg,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(24, 18, 24, 24),
+        decoration: const BoxDecoration(
+          color: _bg,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 38,
+                height: 3,
+                decoration: BoxDecoration(
+                  color: _line,
+                  borderRadius: BorderRadius.circular(99),
+                ),
+              ),
             ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
+            SizedBox(height: 24.h),
+            const Text(
+              '새 약 추가',
+              style: TextStyle(
+                fontSize: 20,
+                color: _dark,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            SizedBox(height: 18.h),
+            _InputField(
+              label: '약 이름',
+              controller: name,
+              hint: '예: 혈압약',
+              onChanged: (_) => setState(() {}),
+            ),
+            _Label('시간'),
+            Container(
+              padding: const EdgeInsets.all(18),
+              decoration: _cardDecoration(),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: _NumberStepper(
+                      text: isAm ? '오전' : '오후',
+                      onAdd: () => setState(() => isAm = !isAm),
+                      onSub: () => setState(() => isAm = !isAm),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _NumberStepper(
+                      text: '${hour.toString().padLeft(2, '0')}시',
+                      onAdd: () => setState(() => hour = (hour % 12) + 1),
+                      onSub: () => setState(() => hour = hour == 1 ? 12 : hour - 1),
+                    ),
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 8),
+                    child: Text(
+                      ':',
+                      style: TextStyle(
+                        fontSize: 20,
+                        color: _brown,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: _NumberStepper(
+                      text: '${minute.toString().padLeft(2, '0')}분',
+                      onAdd: () => setState(() => minute = (minute + 5) % 60),
+                      onSub: () => setState(() => minute = (minute + 55) % 60),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            SizedBox(height: 16.h),
+            _Label('복용 시점'),
+            Row(
+              children: ['식전', '식후', '공복', '아무때나']
+                  .map(
+                    (item) => Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.only(right: 6),
+                        child: _ChoiceChipButton(
+                          text: item,
+                          selected: timing == item,
+                          onTap: () => setState(() => timing = item),
+                        ),
+                      ),
+                    ),
+                  )
+                  .toList(),
+            ),
+            SizedBox(height: 18.h),
+            Row(
               children: [
-                Center(
-                  child: Container(
-                    width: 38,
-                    height: 3,
-                    decoration: BoxDecoration(
-                      color: _line,
-                      borderRadius: BorderRadius.circular(99),
-                    ),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.pop(context),
+                    style: _softButtonStyle(),
+                    child: const Text('취소'),
                   ),
                 ),
-                SizedBox(height: 24.h),
-                const Text(
-                  '새 약 추가',
-                  style: TextStyle(
-                    fontSize: 20,
-                    color: _dark,
-                    fontWeight: FontWeight.w900,
+                const SizedBox(width: 10),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: canAdd
+                        ? () => Navigator.pop(
+                              context,
+                              _MedicationDraft(
+                                name.text.trim(),
+                                _time24,
+                                timing,
+                              ),
+                            )
+                        : null,
+                    style: _primaryButtonStyle(),
+                    child: const Text('추가'),
                   ),
-                ),
-                SizedBox(height: 18.h),
-                _InputField(
-                  label: '약 이름',
-                  controller: name,
-                  hint: '예: 혈압약',
-                  onChanged: (_) => setSheetState(() {}),
-                ),
-                _Label('시간'),
-                Container(
-                  padding: const EdgeInsets.all(18),
-                  decoration: _cardDecoration(),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: _NumberStepper(
-                          text: '오전 ${hour.toString().padLeft(2, '0')}시',
-                          onAdd: () =>
-                              setSheetState(() => hour = (hour % 12) + 1),
-                          onSub: () => setSheetState(
-                            () => hour = hour == 1 ? 12 : hour - 1,
-                          ),
-                        ),
-                      ),
-                      const Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 8),
-                        child: Text(
-                          ':',
-                          style: TextStyle(
-                            fontSize: 20,
-                            color: _brown,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                      ),
-                      Expanded(
-                        child: _NumberStepper(
-                          text: '${minute.toString().padLeft(2, '0')}분',
-                          onAdd: () =>
-                              setSheetState(() => minute = (minute + 5) % 60),
-                          onSub: () =>
-                              setSheetState(() => minute = (minute + 55) % 60),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                SizedBox(height: 16.h),
-                _Label('복용 시점'),
-                Row(
-                  children: ['식전', '식후', '공복', '아무때나']
-                      .map(
-                        (item) => Expanded(
-                          child: Padding(
-                            padding: const EdgeInsets.only(right: 6),
-                            child: _ChoiceChipButton(
-                              text: item,
-                              selected: timing == item,
-                              onTap: () => setSheetState(() => timing = item),
-                            ),
-                          ),
-                        ),
-                      )
-                      .toList(),
-                ),
-                SizedBox(height: 18.h),
-                Row(
-                  children: [
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: () => Navigator.pop(context),
-                        style: _softButtonStyle(),
-                        child: const Text('취소'),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: canAdd
-                            ? () {
-                                widget.onAdd(
-                                  _Medication(
-                                    name.text.trim(),
-                                    '${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}',
-                                    timing,
-                                  ),
-                                );
-                                Navigator.pop(context);
-                              }
-                            : null,
-                        style: _primaryButtonStyle(),
-                        child: const Text('추가'),
-                      ),
-                    ),
-                  ],
                 ),
               ],
             ),
-          ),
-        );
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── 공용: 로딩/에러 처리 ─────────────────────────────
+class _AsyncView<T> extends StatefulWidget {
+  const _AsyncView({required this.load, required this.builder});
+
+  final Future<T> Function() load;
+  final Widget Function(
+    BuildContext context,
+    T data,
+    Future<void> Function() reload,
+  ) builder;
+
+  @override
+  State<_AsyncView<T>> createState() => _AsyncViewState<T>();
+}
+
+class _AsyncViewState<T> extends State<_AsyncView<T>> {
+  late Future<T> _future = widget.load();
+
+  Future<void> _reload() async {
+    setState(() => _future = widget.load());
+    try {
+      await _future;
+    } catch (_) {
+      // 에러는 FutureBuilder가 화면에 표시한다.
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<T>(
+      future: _future,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Center(
+            child: CircularProgressIndicator(color: _brown, strokeWidth: 2.5),
+          );
+        }
+        if (snapshot.hasError) {
+          return _ErrorBox(
+            message: _errorText(snapshot.error),
+            onRetry: _reload,
+          );
+        }
+        return widget.builder(context, snapshot.data as T, _reload);
       },
     );
   }
+}
+
+class _ErrorBox extends StatelessWidget {
+  const _ErrorBox({required this.message, required this.onRetry});
+
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.cloud_off, color: _muted, size: 30),
+            SizedBox(height: 12.h),
+            Text(message, textAlign: TextAlign.center, style: _caption()),
+            SizedBox(height: 12.h),
+            TextButton(
+              onPressed: onRetry,
+              style: TextButton.styleFrom(foregroundColor: _brown),
+              child: const Text('다시 시도'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+String _errorText(Object? error) {
+  if (error is ApiException) return error.message;
+  return '연결에 실패했어요. 잠시 후 다시 시도해 주세요.';
+}
+
+void _toast(BuildContext context, String message) {
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Text(message, style: const TextStyle(fontWeight: FontWeight.w800)),
+      backgroundColor: _dark,
+      behavior: SnackBarBehavior.floating,
+    ),
+  );
+}
+
+String _initial(String name) => name.trim().isEmpty ? '?' : name.trim()[0];
+
+/// 하위 화면에서 값이 바뀌어 돌아오면 목록을 다시 불러온다.
+Future<void> _openAndReload(
+  BuildContext context,
+  Widget page,
+  Future<void> Function() reload,
+) async {
+  await Navigator.push<bool>(context, MaterialPageRoute(builder: (_) => page));
+  await reload();
 }
 
 void _push(BuildContext context, Widget page) {
@@ -1812,16 +2506,16 @@ class _InputField extends StatelessWidget {
     required this.label,
     required this.controller,
     this.hint,
-    this.keyboardType,
     this.trailing,
     this.onChanged,
+    this.enabled = true,
   });
   final String label;
   final TextEditingController controller;
   final String? hint;
-  final TextInputType? keyboardType;
   final Widget? trailing;
   final ValueChanged<String>? onChanged;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
@@ -1833,10 +2527,15 @@ class _InputField extends StatelessWidget {
           _Label(label),
           TextField(
             controller: controller,
-            keyboardType: keyboardType,
             onChanged: onChanged,
+            enabled: enabled,
             decoration: InputDecoration(
               hintText: hint,
+              // 비활성 필드도 흰 배경/테두리를 유지한다.
+              disabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: _line),
+              ),
               suffixIcon: trailing == null
                   ? null
                   : Padding(
@@ -2096,17 +2795,22 @@ class _VoiceRow extends StatelessWidget {
     required this.subtitle,
     this.checked = false,
     this.progress,
+    this.onTap,
   });
   final String name;
   final String subtitle;
   final bool checked;
   final double? progress;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      child: Row(
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        child: Row(
         children: [
           _IconBox(
             icon: Icons.mic_none,
@@ -2132,8 +2836,9 @@ class _VoiceRow extends StatelessWidget {
               ],
             ),
           ),
-          if (checked) const Icon(Icons.check_circle, color: _brown),
-        ],
+            if (checked) const Icon(Icons.check_circle, color: _brown),
+          ],
+        ),
       ),
     );
   }
@@ -2200,21 +2905,28 @@ class _FamilyRow extends StatelessWidget {
     required this.name,
     required this.role,
     this.badges = const [],
+    this.onLongPress,
   });
   final String name;
   final String role;
   final List<String> badges;
 
+  /// 주보호자가 이 가족을 제거할 수 있을 때만 지정된다.
+  final VoidCallback? onLongPress;
+
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-      child: Row(
+    return GestureDetector(
+      onLongPress: onLongPress,
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+        child: Row(
         children: [
           _Avatar(
-            label: name.substring(0, 1),
+            label: _initial(name),
             size: 40,
-            color: name.contains('박') ? _green : _brown,
+            color: _brown,
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -2254,8 +2966,10 @@ class _FamilyRow extends StatelessWidget {
               ],
             ),
           ),
-          const Icon(Icons.chevron_right, color: _muted, size: 18),
-        ],
+            if (onLongPress != null)
+              const Icon(Icons.chevron_right, color: _muted, size: 18),
+          ],
+        ),
       ),
     );
   }
@@ -2263,7 +2977,7 @@ class _FamilyRow extends StatelessWidget {
 
 class _MedicationTile extends StatelessWidget {
   const _MedicationTile({required this.med, required this.onDelete});
-  final _Medication med;
+  final Medication med;
   final VoidCallback onDelete;
 
   @override
@@ -2534,13 +3248,6 @@ class _SwitchData {
   final String subtitle;
   final bool value;
   final ValueChanged<bool> onChanged;
-}
-
-class _Medication {
-  _Medication(this.name, this.time, this.timing);
-  final String name;
-  final String time;
-  final String timing;
 }
 
 TextStyle _rowTitle() =>
