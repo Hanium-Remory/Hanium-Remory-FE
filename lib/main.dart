@@ -12,23 +12,14 @@ class ReMoryApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ScreenUtilInit(
-      // 디자인 기준 크기(고정). 첫 프레임에 View.of(context).physicalSize 가 0이라
-      // 이를 designSize로 쓰면 ScreenUtil이 모든 크기를 0으로 계산해 화면이 비었었음.
-      designSize: const Size(393, 852),
-      minTextAdapt: true,
-      splitScreenMode: true,
-      builder: (context, child) {
-        return MaterialApp(
-          debugShowCheckedModeBanner: false,
-          builder: (context, child) => _PhoneViewport(child: child),
-          theme: ThemeData(
-            scaffoldBackgroundColor: const Color(0xFFFBF6EE),
-            fontFamily: 'Pretendard',
-          ),
-          home: const SplashScreen(),
-        );
-      },
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      builder: (context, child) => _PhoneViewport(child: child),
+      theme: ThemeData(
+        scaffoldBackgroundColor: const Color(0xFFFBF6EE),
+        fontFamily: 'Pretendard',
+      ),
+      home: const SplashScreen(),
     );
   }
 }
@@ -40,18 +31,30 @@ class _PhoneViewport extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // MaterialApp.builder 안에서는 LayoutBuilder의 maxHeight가 무한일 수 있어
-    // SizedBox(height: 무한) → Scaffold의 Expanded가 터진다.
-    // MediaQuery로 '유한한' 화면 크기를 받아 폭만 402로 제한한다.
     final size = MediaQuery.sizeOf(context);
-    final width = size.width > 402 ? 402.0 : size.width;
+    final phoneSize = Size(
+      size.width.clamp(0.0, 402.0),
+      size.height.clamp(0.0, 874.0),
+    );
+    final mediaQuery = MediaQuery.of(context).copyWith(size: phoneSize);
+
     return ColoredBox(
       color: const Color(0xFFFBF6EE),
       child: Center(
         child: SizedBox(
-          width: width,
-          height: size.height,
-          child: child,
+          width: phoneSize.width,
+          height: phoneSize.height,
+          child: MediaQuery(
+            data: mediaQuery,
+            child: ScreenUtilInit(
+              designSize: const Size(402, 874),
+              minTextAdapt: true,
+              splitScreenMode: true,
+              enableScaleWH: () => false,
+              enableScaleText: () => false,
+              builder: (context, _) => child ?? const SizedBox.shrink(),
+            ),
+          ),
         ),
       ),
     );

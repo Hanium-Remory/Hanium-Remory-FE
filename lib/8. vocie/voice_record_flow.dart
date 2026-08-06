@@ -596,13 +596,20 @@ class _Header extends StatelessWidget {
       height: 40.h,
       child: Row(
         children: [
-          GestureDetector(
-            onTap: onBack ?? () => Navigator.maybePop(context),
-            child: SizedBox(
-              width: 34.w,
-              height: 34.w,
-              child: Icon(Icons.chevron_left, size: 25.sp, color: _dark),
-            ),
+          IconButton(
+            tooltip: '뒤로 가기',
+            onPressed:
+                onBack ??
+                () => Navigator.of(context, rootNavigator: true)
+                    .pushAndRemoveUntil(
+                      MaterialPageRoute(
+                        builder: (_) => const HomeAndAlertPreview(),
+                      ),
+                      (_) => false,
+                    ),
+            icon: Icon(Icons.chevron_left, size: 28.sp, color: _dark),
+            padding: EdgeInsets.zero,
+            constraints: BoxConstraints(minWidth: 44.w, minHeight: 40.h),
           ),
           Expanded(
             child: Text(

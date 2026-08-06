@@ -11,6 +11,9 @@ import 'package:http/http.dart' as http;
 import 'auth_api.dart' show kBackendBaseUrl;
 import 'session_store.dart';
 
+// TODO: 설정 백엔드 연동이 준비되면 false로 변경한다.
+const bool kUseMockSettingsForDevelopment = false;
+
 /// 서버가 돌려준 message를 그대로 사용자에게 보여줄 수 있는 에러.
 class ApiException implements Exception {
   ApiException(this.message, this.status);
@@ -41,6 +44,9 @@ class SettingsApi {
     bool auth = true,
     bool allowRetry = true,
   }) async {
+    if (kUseMockSettingsForDevelopment) {
+      return _mockSettingsResponse(method, path, body);
+    }
     final headers = {'Content-Type': 'application/json'};
     if (auth) {
       final token = await SessionStore.accessToken();
@@ -256,6 +262,135 @@ class SettingsApi {
   /// 개발용: 어르신·인형 샘플 데이터를 만든다(백엔드 DEBUG=true 일 때만).
   /// 첫 등록/초대 코드 플로우가 붙으면 지워도 된다.
   Future<void> seedDemoData() async => _send('POST', '/dev/seed');
+}
+
+dynamic _mockSettingsResponse(
+  String method,
+  String path,
+  Map<String, dynamic>? body,
+) {
+  if (path == '/protectors/me') {
+    return {
+      'protectorId': 1,
+      'name': body?['name'] ?? '김기억',
+      'phoneNumber': '01012345678',
+      'relation': body?['relation'] ?? '딸',
+      'profileImageUrl': body?['profileImageUrl'],
+      'users': [
+        {'userId': 1, 'name': '박순자', 'deviceId': 1, 'isPrimary': true},
+      ],
+      'notificationSettings': {
+        'urgent': true,
+        'dailyReport': true,
+        'chat': true,
+        'marketing': false,
+      },
+    };
+  }
+  if (path == '/protectors/me/notification-settings') {
+    return body ?? <String, bool>{};
+  }
+  if (RegExp(r'^/users/\d+$').hasMatch(path)) {
+    return {
+      'userId': 1,
+      'name': body?['name'] ?? '박순자',
+      'gender': body?['gender'] ?? 'female',
+      'birthDate': body?['birthDate'] ?? '1957-06-20',
+      'age': 69,
+      'photoUrl': null,
+      'note': body?['note'] ?? '따뜻한 대화를 좋아해요.',
+      'deviceId': 1,
+    };
+  }
+  if (path.endsWith('/family-members')) {
+    return {
+      'stats': {'familyCount': 2, 'voiceCount': 1, 'inviteCodeCount': 1},
+      'members': [
+        {
+          'protectorId': 1,
+          'name': '김기억',
+          'relation': '딸',
+          'isPrimary': true,
+          'isMe': true,
+        },
+        {
+          'protectorId': 2,
+          'name': '김마음',
+          'relation': '아들',
+          'isPrimary': false,
+          'isMe': false,
+        },
+      ],
+    };
+  }
+  if (path.endsWith('/settings/voice')) return <String, dynamic>{};
+  if (path.endsWith('/settings')) {
+    return {
+      'deviceId': 1,
+      'name': body?['name'] ?? '모리',
+      'connected': true,
+      'batteryLevel': 82,
+      'batteryHoursLeft': 18,
+      'volume': body?['volume'] ?? 60,
+      'medicationCheck': body?['medicationCheck'] ?? true,
+      'defaultVoiceId': body?['defaultVoiceId'] ?? 1,
+      'voices': [
+        {
+          'voiceId': 1,
+          'name': '기억이 목소리',
+          'status': 'ready',
+          'progress': 100,
+          'isDefault': true,
+        },
+      ],
+      'pairedAt': '2026-07-01T00:00:00.000Z',
+    };
+  }
+  if (path.endsWith('/dnd')) {
+    return {
+      'enabled': body?['enabled'] ?? true,
+      'startHour': body?['startHour'] ?? 22,
+      'endHour': body?['endHour'] ?? 7,
+      'allowUrgentAlert': body?['allowUrgentAlert'] ?? true,
+      'allowWakeWord': body?['allowWakeWord'] ?? false,
+    };
+  }
+  if (path.endsWith('/medications')) {
+    if (method == 'POST') {
+      return {
+        'medicationId': 2,
+        'name': body?['name'] ?? '약',
+        'time': body?['time'] ?? '08:00',
+        'timing': body?['timing'] ?? '식후',
+        'enabled': true,
+      };
+    }
+    return {
+      'medicationCheck': true,
+      'medications': [
+        {
+          'medicationId': 1,
+          'name': '혈압약',
+          'time': '08:00',
+          'timing': '식후',
+          'enabled': true,
+        },
+      ],
+    };
+  }
+  if (RegExp(r'^/medications/\d+$').hasMatch(path) && method == 'PUT') {
+    return {
+      'medicationId': 1,
+      'name': body?['name'] ?? '혈압약',
+      'time': body?['time'] ?? '08:00',
+      'timing': body?['timing'] ?? '식후',
+      'enabled': body?['enabled'] ?? true,
+    };
+  }
+  if (path == '/service/info') {
+    return {'appName': 'ReMory', 'version': '개발 미리보기'};
+  }
+  return <String, dynamic>{};
 }
 
 Map<String, bool> _boolMap(Map<String, dynamic> json) =>

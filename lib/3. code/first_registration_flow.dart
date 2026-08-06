@@ -13,6 +13,9 @@ const Color _muted = Color(0xFF7C6B61);
 const Color _line = Color(0xFFE8DCD2);
 const Color _soft = Color(0xFFF5E9DF);
 
+// TODO: 백엔드 Passkey/OTP 연동이 준비되면 false로 변경한다.
+const bool kBypassPasskeyForDevelopment = false;
+
 class FirstRegistrationFlow extends StatefulWidget {
   const FirstRegistrationFlow({super.key});
 
@@ -69,6 +72,12 @@ class _FirstRegistrationFlowState extends State<FirstRegistrationFlow> {
   /// 성공하면 onboardingToken 저장 후 보호자 정보(전화번호) 페이지로.
   Future<void> _onFaceIdStart() async {
     if (_busy) return;
+    if (kBypassPasskeyForDevelopment) {
+      _onboardingToken = 'development-bypass';
+      _snack('개발 모드: Face ID 등록을 건너뛰었습니다.');
+      _next();
+      return;
+    }
     try {
       _setBusy(true, 'Face ID로 패스키 등록 중…\n생체인증을 진행하세요');
       _onboardingToken = await _api.registerPasskeyFirst(displayName: '보호자');
@@ -91,6 +100,11 @@ class _FirstRegistrationFlowState extends State<FirstRegistrationFlow> {
     }
     if (phone.trim().length < 9) {
       _snack('전화번호를 확인해 주세요.');
+      return;
+    }
+    if (kBypassPasskeyForDevelopment) {
+      _snack('개발 모드: 전화번호 인증을 건너뛰었습니다.');
+      _next();
       return;
     }
     try {
@@ -818,6 +832,20 @@ class _ScrollDateColumnState extends State<_ScrollDateColumn> {
   late final FixedExtentScrollController _controller;
   late int _selectedIndex;
 
+  Future<void> _moveBy(int offset) async {
+    final target = (_selectedIndex + offset).clamp(
+      0,
+      widget.values.length - 1,
+    );
+    if (target == _selectedIndex || !_controller.hasClients) return;
+
+    await _controller.animateToItem(
+      target,
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -840,8 +868,19 @@ class _ScrollDateColumnState extends State<_ScrollDateColumn> {
           alignment: Alignment.center,
           children: [
             Positioned(
-              top: 6.h,
-              child: Icon(Icons.keyboard_arrow_up, size: 15.sp, color: _brown),
+              top: 0,
+              child: IconButton(
+                tooltip: '이전 값',
+                onPressed: _selectedIndex > 0 ? () => _moveBy(-1) : null,
+                padding: EdgeInsets.zero,
+                constraints: BoxConstraints.tightFor(
+                  width: 44.w,
+                  height: 28.h,
+                ),
+                icon: Icon(Icons.keyboard_arrow_up, size: 18.sp),
+                color: _brown,
+                disabledColor: _line,
+              ),
             ),
             Center(
               child: Container(
@@ -886,8 +925,21 @@ class _ScrollDateColumnState extends State<_ScrollDateColumn> {
               ),
             ),
             Positioned(
-              bottom: 6.h,
-              child: Icon(Icons.keyboard_arrow_down, size: 15.sp, color: _brown),
+              bottom: 0,
+              child: IconButton(
+                tooltip: '다음 값',
+                onPressed: _selectedIndex < widget.values.length - 1
+                    ? () => _moveBy(1)
+                    : null,
+                padding: EdgeInsets.zero,
+                constraints: BoxConstraints.tightFor(
+                  width: 44.w,
+                  height: 28.h,
+                ),
+                icon: Icon(Icons.keyboard_arrow_down, size: 18.sp),
+                color: _brown,
+                disabledColor: _line,
+              ),
             ),
           ],
         ),

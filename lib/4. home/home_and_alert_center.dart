@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
@@ -51,7 +53,7 @@ class HomeScreen extends StatelessWidget {
                   SizedBox(height: 12.h),
                   _TopBar(onOpenAlerts: onOpenAlerts),
                   SizedBox(height: 12.h),
-                  Text('5월 19일 오전 9시 14분', style: _caption()),
+                  const _KoreanDateTimeText(),
                   SizedBox(height: 4.h),
                   Text('오늘 박순자님은 잘 지내고 계세요', style: _headline()),
                   SizedBox(height: 12.h),
@@ -309,6 +311,46 @@ class _PhoneFrame extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _KoreanDateTimeText extends StatefulWidget {
+  const _KoreanDateTimeText();
+
+  @override
+  State<_KoreanDateTimeText> createState() => _KoreanDateTimeTextState();
+}
+
+class _KoreanDateTimeTextState extends State<_KoreanDateTimeText> {
+  late DateTime _now = _koreanNow();
+  Timer? _timer;
+
+  static DateTime _koreanNow() =>
+      DateTime.now().toUtc().add(const Duration(hours: 9));
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted) setState(() => _now = _koreanNow());
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final period = _now.hour < 12 ? '오전' : '오후';
+    final hour = _now.hour % 12 == 0 ? 12 : _now.hour % 12;
+    final minute = _now.minute.toString().padLeft(2, '0');
+    return Text(
+      '${_now.month}월 ${_now.day}일 $period $hour시 $minute분',
+      style: _caption(),
     );
   }
 }

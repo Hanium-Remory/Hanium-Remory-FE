@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
+import '../4. home/home_and_alert_center.dart';
+
 const Color _bg = Color(0xFFFBF6EE);
 const Color _brown = Color(0xFF936249);
 const Color _dark = Color(0xFF2F2521);
@@ -100,14 +102,16 @@ class _Header extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        GestureDetector(
-          onTap: () => Navigator.maybePop(context),
-          behavior: HitTestBehavior.opaque,
-          child: const SizedBox(
-            width: 30,
-            height: 30,
-            child: Icon(Icons.chevron_left, size: 24, color: _dark),
-          ),
+        IconButton(
+          tooltip: '뒤로 가기',
+          onPressed: () =>
+              Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
+                MaterialPageRoute(builder: (_) => const HomeAndAlertPreview()),
+                (_) => false,
+              ),
+          icon: const Icon(Icons.chevron_left, size: 28, color: _dark),
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
         ),
         Expanded(
           child: Column(

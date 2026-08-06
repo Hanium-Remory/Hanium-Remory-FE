@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../1. splash_onboarding/splash_screen.dart';
+import '../4. home/home_and_alert_center.dart';
 import '../5. memory/memory_add_flow.dart';
 import '../6. chat/family_chat_screen.dart';
 import '../services/session_store.dart';
@@ -19,12 +22,27 @@ const Color _green = Color(0xFF5D9E41);
 
 final SettingsApi _api = SettingsApi();
 
-class SettingsFlow extends StatelessWidget {
+class SettingsFlow extends StatefulWidget {
   const SettingsFlow({super.key});
 
   @override
+  State<SettingsFlow> createState() => _SettingsFlowState();
+}
+
+class _SettingsFlowState extends State<SettingsFlow> {
+  int _destination = 3;
+
+  @override
   Widget build(BuildContext context) {
-    return const SettingsHubScreen();
+    return switch (_destination) {
+      0 => const HomeAndAlertPreview(),
+      1 => const FamilyChatScreen(),
+      2 => const MemoryAddFlow(),
+      _ => SettingsHubScreen(
+        onBack: () => setState(() => _destination = 0),
+        onDestinationSelected: (index) => setState(() => _destination = index),
+      ),
+    };
   }
 }
 
@@ -54,13 +72,16 @@ Future<_HubData> _loadHub() async {
   final Future<FamilyMembers?> familyF = user == null
       ? Future<FamilyMembers?>.value()
       : _api.familyMembers(user.userId);
-  final Future<DndSettings?> dndF =
-      deviceId == null ? Future<DndSettings?>.value() : _api.dnd(deviceId);
+  final Future<DndSettings?> dndF = deviceId == null
+      ? Future<DndSettings?>.value()
+      : _api.dnd(deviceId);
   final Future<MedicationList?> medsF = deviceId == null
       ? Future<MedicationList?>.value()
       : _api.medications(deviceId);
-  final Future<ServiceInfo?> infoF =
-      _api.serviceInfo().then<ServiceInfo?>((v) => v).catchError((_) => null);
+  final Future<ServiceInfo?> infoF = _api
+      .serviceInfo()
+      .then<ServiceInfo?>((v) => v)
+      .catchError((_) => null);
 
   return _HubData(
     profile: profile,
@@ -72,7 +93,14 @@ Future<_HubData> _loadHub() async {
 }
 
 class SettingsHubScreen extends StatelessWidget {
-  const SettingsHubScreen({super.key});
+  const SettingsHubScreen({
+    super.key,
+    this.onBack,
+    required this.onDestinationSelected,
+  });
+
+  final VoidCallback? onBack;
+  final ValueChanged<int> onDestinationSelected;
 
   @override
   Widget build(BuildContext context) {
@@ -81,13 +109,29 @@ class SettingsHubScreen extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(height: 16.h),
-          const Text(
-            '설정',
-            style: TextStyle(
-              fontSize: 26,
-              fontWeight: FontWeight.w900,
-              color: _dark,
-            ),
+          Row(
+            children: [
+              IconButton(
+                tooltip: '홈으로 돌아가기',
+                onPressed:
+                    onBack ??
+                    () => _replaceRoot(context, const HomeAndAlertPreview()),
+                icon: const Icon(Icons.arrow_back_ios_new_rounded),
+                color: _dark,
+                iconSize: 20,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+              ),
+              const SizedBox(width: 4),
+              const Text(
+                '설정',
+                style: TextStyle(
+                  fontSize: 26,
+                  fontWeight: FontWeight.w900,
+                  color: _dark,
+                ),
+              ),
+            ],
           ),
           SizedBox(height: 18.h),
           Expanded(
@@ -97,7 +141,7 @@ class SettingsHubScreen extends StatelessWidget {
                   _HubBody(data: data, reload: reload),
             ),
           ),
-          const _SettingsNavBar(),
+          _SettingsNavBar(onSelected: onDestinationSelected),
           SizedBox(height: 8.h),
         ],
       ),
@@ -178,10 +222,10 @@ class _HubBody extends StatelessWidget {
                 onTap: deviceId == null
                     ? null
                     : () => _openAndReload(
-                          context,
-                          DollSettingsScreen(deviceId: deviceId),
-                          reload,
-                        ),
+                        context,
+                        DollSettingsScreen(deviceId: deviceId),
+                        reload,
+                      ),
               ),
               _MenuRow(
                 icon: Icons.person_outline,
@@ -226,15 +270,15 @@ class _HubBody extends StatelessWidget {
                 subtitle: dnd == null
                     ? '-'
                     : dnd.enabled
-                        ? '${_hourText(dnd.startHour)} ~ ${_hourText(dnd.endHour)}'
-                        : '사용 안 함',
+                    ? '${_hourText(dnd.startHour)} ~ ${_hourText(dnd.endHour)}'
+                    : '사용 안 함',
                 onTap: deviceId == null
                     ? null
                     : () => _openAndReload(
-                          context,
-                          QuietHoursScreen(deviceId: deviceId),
-                          reload,
-                        ),
+                        context,
+                        QuietHoursScreen(deviceId: deviceId),
+                        reload,
+                      ),
               ),
               _MenuRow(
                 icon: Icons.medication_outlined,
@@ -243,10 +287,10 @@ class _HubBody extends StatelessWidget {
                 onTap: deviceId == null
                     ? null
                     : () => _openAndReload(
-                          context,
-                          MedicationTimeScreen(deviceId: deviceId),
-                          reload,
-                        ),
+                        context,
+                        MedicationTimeScreen(deviceId: deviceId),
+                        reload,
+                      ),
               ),
             ],
           ),
@@ -326,11 +370,19 @@ class _NoElderCardState extends State<_NoElderCard> {
 }
 
 // ── 내 프로필 ────────────────────────────────────────
-class MyProfileScreen extends StatelessWidget {
+class MyProfileScreen extends StatefulWidget {
   const MyProfileScreen({super.key});
 
   @override
+  State<MyProfileScreen> createState() => _MyProfileScreenState();
+}
+
+class _MyProfileScreenState extends State<MyProfileScreen> {
+  bool _showSettings = false;
+
+  @override
   Widget build(BuildContext context) {
+    if (_showSettings) return const SettingsFlow();
     return _PhoneFrame(
       child: _AsyncView<MyProfile>(
         load: _api.myProfile,
@@ -338,6 +390,7 @@ class MyProfileScreen extends StatelessWidget {
           children: [
             _TopHeader(
               title: '내 프로필',
+              onBack: () => setState(() => _showSettings = true),
               action: '편집',
               onAction: () => _openAndReload(
                 context,
@@ -390,7 +443,11 @@ class _MyProfileBodyState extends State<_MyProfileBody> {
       children: [
         SizedBox(height: 22.h),
         Center(
-          child: _Avatar(label: _initial(profile.name), size: 78, color: _brown),
+          child: _Avatar(
+            label: _initial(profile.name),
+            size: 78,
+            color: _brown,
+          ),
         ),
         SizedBox(height: 14.h),
         Text(
@@ -465,13 +522,16 @@ class MyProfileEditScreen extends StatefulWidget {
 class _MyProfileEditScreenState extends State<MyProfileEditScreen> {
   static const _relations = ['딸', '아들', '며느리', '사위', '손주', '손녀', '기타'];
 
-  late final TextEditingController name =
-      TextEditingController(text: widget.profile.name);
-  late final TextEditingController phone =
-      TextEditingController(text: widget.profile.formattedPhone);
+  late final TextEditingController name = TextEditingController(
+    text: widget.profile.name,
+  );
+  late final TextEditingController phone = TextEditingController(
+    text: widget.profile.formattedPhone,
+  );
   Uint8List? photoBytes;
   late String? relation = widget.profile.relation;
   bool _saving = false;
+  bool _showProfile = false;
 
   @override
   void dispose() {
@@ -489,7 +549,7 @@ class _MyProfileEditScreenState extends State<MyProfileEditScreen> {
     try {
       await _api.updateProfile(name: name.text.trim(), relation: relation);
       if (!mounted) return;
-      Navigator.pop(context, true);
+      _savedToast(context);
     } catch (e) {
       if (mounted) _toast(context, _errorText(e));
     } finally {
@@ -502,7 +562,10 @@ class _MyProfileEditScreenState extends State<MyProfileEditScreen> {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: _bg,
-        title: const Text('회원 탈퇴', style: TextStyle(fontWeight: FontWeight.w900)),
+        title: const Text(
+          '회원 탈퇴',
+          style: TextStyle(fontWeight: FontWeight.w900),
+        ),
         content: Text(
           '탈퇴하면 패스키와 돌봄 기록이 모두 삭제돼요.\n정말 탈퇴하시겠어요?',
           style: _caption(),
@@ -537,11 +600,13 @@ class _MyProfileEditScreenState extends State<MyProfileEditScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_showProfile) return const MyProfileScreen();
     return _PhoneFrame(
       child: Column(
         children: [
           _TopHeader(
             title: '프로필 편집',
+            onBack: () => setState(() => _showProfile = true),
             action: _saving ? '저장 중' : '저장',
             onAction: _saving ? null : _save,
           ),
@@ -618,20 +683,32 @@ class _MyProfileEditScreenState extends State<MyProfileEditScreen> {
 }
 
 // ── 인형 설정 ────────────────────────────────────────
-class DollSettingsScreen extends StatelessWidget {
+class DollSettingsScreen extends StatefulWidget {
   const DollSettingsScreen({super.key, required this.deviceId});
 
   final int deviceId;
 
   @override
+  State<DollSettingsScreen> createState() => _DollSettingsScreenState();
+}
+
+class _DollSettingsScreenState extends State<DollSettingsScreen> {
+  bool _showSettings = false;
+
+  @override
   Widget build(BuildContext context) {
+    if (_showSettings) return const SettingsFlow();
+
     return _PhoneFrame(
       child: Column(
         children: [
-          const _TopHeader(title: '인형 설정'),
+          _TopHeader(
+            title: '인형 설정',
+            onBack: () => setState(() => _showSettings = true),
+          ),
           Expanded(
             child: _AsyncView<DeviceSettings>(
-              load: () => _api.deviceSettings(deviceId),
+              load: () => _api.deviceSettings(widget.deviceId),
               builder: (context, device, reload) =>
                   _DollSettingsBody(device: device, reload: reload),
             ),
@@ -697,8 +774,10 @@ class _DollSettingsBody extends StatelessWidget {
                 ),
               SizedBox(height: 12.h),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: device.connected
                       ? const Color(0xFFE7F6D8)
@@ -781,8 +860,9 @@ class _DollSettingsBody extends StatelessWidget {
           style: OutlinedButton.styleFrom(
             foregroundColor: _brown,
             side: const BorderSide(color: _brown),
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
           ),
         ),
         SizedBox(height: 18.h),
@@ -827,13 +907,14 @@ class DollVolumeScreen extends StatefulWidget {
 class _DollVolumeScreenState extends State<DollVolumeScreen> {
   late double volume = widget.initialVolume.toDouble().clamp(30, 95);
   bool _saving = false;
+  bool _showDollSettings = false;
 
   Future<void> _save() async {
     setState(() => _saving = true);
     try {
       await _api.updateDeviceSettings(widget.deviceId, volume: volume.round());
       if (!mounted) return;
-      Navigator.pop(context, true);
+      _savedToast(context);
     } catch (e) {
       if (mounted) _toast(context, _errorText(e));
     } finally {
@@ -843,11 +924,16 @@ class _DollVolumeScreenState extends State<DollVolumeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_showDollSettings) {
+      return DollSettingsScreen(deviceId: widget.deviceId);
+    }
+
     return _PhoneFrame(
       child: Column(
         children: [
           _TopHeader(
             title: '인형 볼륨',
+            onBack: () => setState(() => _showDollSettings = true),
             action: _saving ? '저장 중' : '저장',
             onAction: _saving ? null : _save,
           ),
@@ -908,20 +994,29 @@ class _DollVolumeScreenState extends State<DollVolumeScreen> {
 }
 
 // ── 어르신 정보 ──────────────────────────────────────
-class ElderInfoScreen extends StatelessWidget {
+class ElderInfoScreen extends StatefulWidget {
   const ElderInfoScreen({super.key, required this.userId});
 
   final int userId;
 
   @override
+  State<ElderInfoScreen> createState() => _ElderInfoScreenState();
+}
+
+class _ElderInfoScreenState extends State<ElderInfoScreen> {
+  bool _showSettings = false;
+
+  @override
   Widget build(BuildContext context) {
+    if (_showSettings) return const SettingsFlow();
     return _PhoneFrame(
       child: _AsyncView<ElderUser>(
-        load: () => _api.user(userId),
+        load: () => _api.user(widget.userId),
         builder: (context, user, reload) => Column(
           children: [
             _TopHeader(
               title: '${user.name}님 정보',
+              onBack: () => setState(() => _showSettings = true),
               action: '편집',
               onAction: () => _openAndReload(
                 context,
@@ -1015,10 +1110,12 @@ class ElderInfoEditScreen extends StatefulWidget {
 }
 
 class _ElderInfoEditScreenState extends State<ElderInfoEditScreen> {
-  late final TextEditingController name =
-      TextEditingController(text: widget.user.name);
-  late final TextEditingController note =
-      TextEditingController(text: widget.user.note);
+  late final TextEditingController name = TextEditingController(
+    text: widget.user.name,
+  );
+  late final TextEditingController note = TextEditingController(
+    text: widget.user.note,
+  );
   Uint8List? photoBytes;
   late String gender = widget.user.gender == 'male' ? '남성' : '여성';
   late int year = widget.user.birthDate?.year ?? 1950;
@@ -1045,11 +1142,15 @@ class _ElderInfoEditScreenState extends State<ElderInfoEditScreen> {
         name: name.text.trim(),
         gender: gender == '남성' ? 'male' : 'female',
         // 말일이 없는 달을 고르면 DateTime이 다음 달로 넘어가므로 미리 맞춘다.
-        birthDate: DateTime(year, month, day.clamp(1, _daysInMonth(year, month))),
+        birthDate: DateTime(
+          year,
+          month,
+          day.clamp(1, _daysInMonth(year, month)),
+        ),
         note: note.text.trim(),
       );
       if (!mounted) return;
-      Navigator.pop(context, true);
+      _savedToast(context);
     } catch (e) {
       if (mounted) _toast(context, _errorText(e));
     } finally {
@@ -1104,12 +1205,15 @@ class _ElderInfoEditScreenState extends State<ElderInfoEditScreen> {
                   year: year,
                   month: month,
                   day: day,
-                  onYear: (v) => setState(() => year += v),
-                  onMonth: (v) =>
-                      setState(() => month = (month + v).clamp(1, 12)),
-                  onDay: (v) => setState(
-                    () => day = (day + v).clamp(1, _daysInMonth(year, month)),
-                  ),
+                  onYear: (value) => setState(() {
+                    year = value;
+                    day = day.clamp(1, _daysInMonth(year, month));
+                  }),
+                  onMonth: (value) => setState(() {
+                    month = value;
+                    day = day.clamp(1, _daysInMonth(year, month));
+                  }),
+                  onDay: (value) => setState(() => day = value),
                 ),
                 SizedBox(height: 16.h),
                 _InputField(
@@ -1131,10 +1235,17 @@ int _daysInMonth(int year, int month) =>
     DateTime(year, month + 1, 0).day; // 다음 달 0일 = 이번 달 말일
 
 // ── 가족 멤버 ────────────────────────────────────────
-class FamilyMembersScreen extends StatelessWidget {
+class FamilyMembersScreen extends StatefulWidget {
   const FamilyMembersScreen({super.key, required this.userId});
 
   final int userId;
+
+  @override
+  State<FamilyMembersScreen> createState() => _FamilyMembersScreenState();
+}
+
+class _FamilyMembersScreenState extends State<FamilyMembersScreen> {
+  bool _showSettings = false;
 
   Future<void> _remove(
     BuildContext context,
@@ -1145,7 +1256,10 @@ class FamilyMembersScreen extends StatelessWidget {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: _bg,
-        title: const Text('가족 제거', style: TextStyle(fontWeight: FontWeight.w900)),
+        title: const Text(
+          '가족 제거',
+          style: TextStyle(fontWeight: FontWeight.w900),
+        ),
         content: Text(
           '${member.name}님을 가족에서 제거할까요?\n등록한 인형 목소리도 함께 지워져요.',
           style: _caption(),
@@ -1174,13 +1288,15 @@ class FamilyMembersScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (_showSettings) return const SettingsFlow();
     return _PhoneFrame(
       child: _AsyncView<FamilyMembers>(
-        load: () => _api.familyMembers(userId),
+        load: () => _api.familyMembers(widget.userId),
         builder: (context, family, reload) => Column(
           children: [
             _TopHeader(
               title: '가족 멤버',
+              onBack: () => setState(() => _showSettings = true),
               iconAction: Icons.share_outlined,
               onAction: () => _push(context, const FamilyInviteScreen()),
             ),
@@ -1228,7 +1344,8 @@ class FamilyMembersScreen extends StatelessWidget {
                             role: member.relation ?? '가족',
                             badges: member.badges,
                             // 주보호자만, 본인이 아닌 가족을 제거할 수 있다.
-                            onLongPress: family.iAmPrimary &&
+                            onLongPress:
+                                family.iAmPrimary &&
                                     !member.isMe &&
                                     !member.isPrimary
                                 ? () => _remove(context, member, reload)
@@ -1377,25 +1494,41 @@ class _FamilyInviteScreenState extends State<FamilyInviteScreen> {
 }
 
 // ── 알림 설정 ────────────────────────────────────────
-class NotificationSettingsScreen extends StatelessWidget {
+class NotificationSettingsScreen extends StatefulWidget {
   const NotificationSettingsScreen({super.key});
 
   @override
+  State<NotificationSettingsScreen> createState() =>
+      _NotificationSettingsScreenState();
+}
+
+class _NotificationSettingsScreenState
+    extends State<NotificationSettingsScreen> {
+  bool _showSettings = false;
+
+  @override
   Widget build(BuildContext context) {
+    if (_showSettings) return const SettingsFlow();
     return _PhoneFrame(
       child: _AsyncView<MyProfile>(
         load: _api.myProfile,
-        builder: (context, profile, reload) =>
-            _NotificationSettingsBody(profile: profile),
+        builder: (context, profile, reload) => _NotificationSettingsBody(
+          profile: profile,
+          onBack: () => setState(() => _showSettings = true),
+        ),
       ),
     );
   }
 }
 
 class _NotificationSettingsBody extends StatefulWidget {
-  const _NotificationSettingsBody({required this.profile});
+  const _NotificationSettingsBody({
+    required this.profile,
+    required this.onBack,
+  });
 
   final MyProfile profile;
+  final VoidCallback onBack;
 
   @override
   State<_NotificationSettingsBody> createState() =>
@@ -1418,7 +1551,7 @@ class _NotificationSettingsBodyState extends State<_NotificationSettingsBody> {
           entry.value: values[entry.key] ?? false,
       });
       if (!mounted) return;
-      Navigator.pop(context, true);
+      _savedToast(context);
     } catch (e) {
       if (mounted) _toast(context, _errorText(e));
     } finally {
@@ -1432,6 +1565,7 @@ class _NotificationSettingsBodyState extends State<_NotificationSettingsBody> {
       children: [
         _TopHeader(
           title: '알림 설정',
+          onBack: widget.onBack,
           action: _saving ? '저장 중' : '저장',
           onAction: _saving ? null : _save,
         ),
@@ -1478,28 +1612,44 @@ class _NotificationSettingsBodyState extends State<_NotificationSettingsBody> {
 }
 
 // ── 방해 금지 시간 ───────────────────────────────────
-class QuietHoursScreen extends StatelessWidget {
+class QuietHoursScreen extends StatefulWidget {
   const QuietHoursScreen({super.key, required this.deviceId});
 
   final int deviceId;
 
   @override
+  State<QuietHoursScreen> createState() => _QuietHoursScreenState();
+}
+
+class _QuietHoursScreenState extends State<QuietHoursScreen> {
+  bool _showSettings = false;
+
+  @override
   Widget build(BuildContext context) {
+    if (_showSettings) return const SettingsFlow();
     return _PhoneFrame(
       child: _AsyncView<DndSettings>(
-        load: () => _api.dnd(deviceId),
-        builder: (context, dnd, reload) =>
-            _QuietHoursBody(deviceId: deviceId, dnd: dnd),
+        load: () => _api.dnd(widget.deviceId),
+        builder: (context, dnd, reload) => _QuietHoursBody(
+          deviceId: widget.deviceId,
+          dnd: dnd,
+          onBack: () => setState(() => _showSettings = true),
+        ),
       ),
     );
   }
 }
 
 class _QuietHoursBody extends StatefulWidget {
-  const _QuietHoursBody({required this.deviceId, required this.dnd});
+  const _QuietHoursBody({
+    required this.deviceId,
+    required this.dnd,
+    required this.onBack,
+  });
 
   final int deviceId;
   final DndSettings dnd;
+  final VoidCallback onBack;
 
   @override
   State<_QuietHoursBody> createState() => _QuietHoursBodyState();
@@ -1529,7 +1679,7 @@ class _QuietHoursBodyState extends State<_QuietHoursBody> {
         allowWakeWord: wake,
       );
       if (!mounted) return;
-      Navigator.pop(context, true);
+      _savedToast(context);
     } catch (e) {
       if (mounted) _toast(context, _errorText(e));
     } finally {
@@ -1543,6 +1693,7 @@ class _QuietHoursBodyState extends State<_QuietHoursBody> {
       children: [
         _TopHeader(
           title: '방해 금지 시간',
+          onBack: widget.onBack,
           action: _saving ? '저장 중' : '저장',
           onAction: _saving ? null : _save,
         ),
@@ -1604,15 +1755,19 @@ class _QuietHoursBodyState extends State<_QuietHoursBody> {
                         Expanded(
                           child: _HourStepper(
                             hour: start,
-                            onAdd: () => setState(() => start = (start + 1) % 24),
+                            onAdd: () =>
+                                setState(() => start = (start + 1) % 24),
                             onSub: () =>
                                 setState(() => start = (start + 23) % 24),
                           ),
                         ),
                         const Padding(
                           padding: EdgeInsets.symmetric(horizontal: 14),
-                          child:
-                              Icon(Icons.arrow_forward, color: _muted, size: 18),
+                          child: Icon(
+                            Icons.arrow_forward,
+                            color: _muted,
+                            size: 18,
+                          ),
                         ),
                         Expanded(
                           child: _HourStepper(
@@ -1663,20 +1818,29 @@ class _QuietHoursBodyState extends State<_QuietHoursBody> {
 }
 
 // ── 약 복용 시간 ─────────────────────────────────────
-class MedicationTimeScreen extends StatelessWidget {
+class MedicationTimeScreen extends StatefulWidget {
   const MedicationTimeScreen({super.key, required this.deviceId});
 
   final int deviceId;
 
   @override
+  State<MedicationTimeScreen> createState() => _MedicationTimeScreenState();
+}
+
+class _MedicationTimeScreenState extends State<MedicationTimeScreen> {
+  bool _showSettings = false;
+
+  @override
   Widget build(BuildContext context) {
+    if (_showSettings) return const SettingsFlow();
     return _PhoneFrame(
       child: _AsyncView<MedicationList>(
-        load: () => _api.medications(deviceId),
+        load: () => _api.medications(widget.deviceId),
         builder: (context, list, reload) => _MedicationBody(
-          deviceId: deviceId,
+          deviceId: widget.deviceId,
           list: list,
           reload: reload,
+          onBack: () => setState(() => _showSettings = true),
         ),
       ),
     );
@@ -1688,11 +1852,13 @@ class _MedicationBody extends StatefulWidget {
     required this.deviceId,
     required this.list,
     required this.reload,
+    required this.onBack,
   });
 
   final int deviceId;
   final MedicationList list;
   final Future<void> Function() reload;
+  final VoidCallback onBack;
 
   @override
   State<_MedicationBody> createState() => _MedicationBodyState();
@@ -1750,8 +1916,9 @@ class _MedicationBodyState extends State<_MedicationBody> {
       children: [
         _TopHeader(
           title: '약 복용 시간',
-          action: '완료',
-          onAction: () => Navigator.maybePop(context),
+          onBack: widget.onBack,
+          action: '저장',
+          onAction: () => _savedToast(context),
         ),
         Expanded(
           child: ListView(
@@ -1836,7 +2003,9 @@ class _AddMedicationSheetState extends State<_AddMedicationSheet> {
     final canAdd = name.text.trim().isNotEmpty;
 
     return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+      ),
       child: Container(
         padding: const EdgeInsets.fromLTRB(24, 18, 24, 24),
         decoration: const BoxDecoration(
@@ -1891,7 +2060,8 @@ class _AddMedicationSheetState extends State<_AddMedicationSheet> {
                     child: _NumberStepper(
                       text: '${hour.toString().padLeft(2, '0')}시',
                       onAdd: () => setState(() => hour = (hour % 12) + 1),
-                      onSub: () => setState(() => hour = hour == 1 ? 12 : hour - 1),
+                      onSub: () =>
+                          setState(() => hour = hour == 1 ? 12 : hour - 1),
                     ),
                   ),
                   const Padding(
@@ -1948,13 +2118,9 @@ class _AddMedicationSheetState extends State<_AddMedicationSheet> {
                   child: ElevatedButton(
                     onPressed: canAdd
                         ? () => Navigator.pop(
-                              context,
-                              _MedicationDraft(
-                                name.text.trim(),
-                                _time24,
-                                timing,
-                              ),
-                            )
+                            context,
+                            _MedicationDraft(name.text.trim(), _time24, timing),
+                          )
                         : null,
                     style: _primaryButtonStyle(),
                     child: const Text('추가'),
@@ -1978,7 +2144,8 @@ class _AsyncView<T> extends StatefulWidget {
     BuildContext context,
     T data,
     Future<void> Function() reload,
-  ) builder;
+  )
+  builder;
 
   @override
   State<_AsyncView<T>> createState() => _AsyncViewState<T>();
@@ -2056,11 +2223,37 @@ String _errorText(Object? error) {
 void _toast(BuildContext context, String message) {
   ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(
-      content: Text(message, style: const TextStyle(fontWeight: FontWeight.w800)),
+      content: Text(
+        message,
+        style: const TextStyle(fontWeight: FontWeight.w800),
+      ),
       backgroundColor: _dark,
       behavior: SnackBarBehavior.floating,
     ),
   );
+}
+
+void _savedToast(BuildContext context) {
+  final messenger = ScaffoldMessenger.of(context);
+  messenger.removeCurrentSnackBar();
+  messenger.showSnackBar(
+    const SnackBar(
+      content: Text(
+        '저장되었습니다',
+        textAlign: TextAlign.center,
+        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800),
+      ),
+      width: 150,
+      padding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      duration: Duration(seconds: 3),
+      backgroundColor: _dark,
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.all(Radius.circular(20)),
+      ),
+    ),
+  );
+  Timer(const Duration(seconds: 3), messenger.removeCurrentSnackBar);
 }
 
 String _initial(String name) => name.trim().isEmpty ? '?' : name.trim()[0];
@@ -2077,6 +2270,13 @@ Future<void> _openAndReload(
 
 void _push(BuildContext context, Widget page) {
   Navigator.push(context, MaterialPageRoute(builder: (_) => page));
+}
+
+void _replaceRoot(BuildContext context, Widget page) {
+  Navigator.of(
+    context,
+    rootNavigator: true,
+  ).pushAndRemoveUntil(MaterialPageRoute(builder: (_) => page), (_) => false);
 }
 
 String _hourText(int hour) {
@@ -2112,15 +2312,21 @@ class _PhoneFrame extends StatelessWidget {
 class _TopHeader extends StatelessWidget {
   const _TopHeader({
     required this.title,
+    this.onBack,
     this.action,
     this.iconAction,
     this.onAction,
   });
 
   final String title;
+  final VoidCallback? onBack;
   final String? action;
   final IconData? iconAction;
   final VoidCallback? onAction;
+
+  void _goBack(BuildContext context) {
+    _replaceRoot(context, const SettingsFlow());
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -2128,14 +2334,12 @@ class _TopHeader extends StatelessWidget {
       padding: EdgeInsets.only(top: 12.h, bottom: 12.h),
       child: Row(
         children: [
-          GestureDetector(
-            onTap: () => Navigator.maybePop(context),
-            behavior: HitTestBehavior.opaque,
-            child: const SizedBox(
-              width: 30,
-              height: 30,
-              child: Icon(Icons.chevron_left, size: 24, color: _dark),
-            ),
+          IconButton(
+            tooltip: '뒤로 가기',
+            onPressed: onBack ?? () => _goBack(context),
+            icon: const Icon(Icons.chevron_left, size: 28, color: _dark),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
           ),
           Expanded(
             child: Text(
@@ -2286,15 +2490,17 @@ class _MenuRow extends StatelessWidget {
 }
 
 class _SettingsNavBar extends StatelessWidget {
-  const _SettingsNavBar();
+  const _SettingsNavBar({required this.onSelected});
+
+  final ValueChanged<int> onSelected;
 
   @override
   Widget build(BuildContext context) {
     final items = [
-      (Icons.home_outlined, '홈', false),
-      (Icons.chat_bubble_outline, '대화', false),
-      (Icons.image_outlined, '추억', false),
-      (Icons.settings_outlined, '설정', true),
+      (Icons.home_outlined, '홈', false, 0),
+      (Icons.chat_bubble_outline, '대화', false, 1),
+      (Icons.image_outlined, '추억', false, 2),
+      (Icons.settings_outlined, '설정', true, 3),
     ];
 
     return Container(
@@ -2305,30 +2511,33 @@ class _SettingsNavBar extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           for (final item in items)
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () {
-                if (item.$2 == '홈') Navigator.maybePop(context);
-                if (item.$2 == '대화') _push(context, const FamilyChatScreen());
-                if (item.$2 == '추억') _push(context, const MemoryAddFlow());
-              },
-              child: SizedBox(
-                width: 52,
-                height: 54,
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(item.$1, size: 20, color: item.$3 ? _yellow : _muted),
-                    const SizedBox(height: 2),
-                    Text(
-                      item.$2,
-                      style: TextStyle(
-                        fontSize: 9,
-                        color: item.$3 ? _brown : _muted,
-                        fontWeight: FontWeight.w800,
+            Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: item.$3 ? null : () => onSelected(item.$4),
+                child: SizedBox(
+                  width: 58,
+                  height: 58,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        item.$1,
+                        size: 20,
+                        color: item.$3 ? _yellow : _muted,
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 2),
+                      Text(
+                        item.$2,
+                        style: TextStyle(
+                          fontSize: 9,
+                          color: item.$3 ? _brown : _muted,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -2632,22 +2841,31 @@ class _DateStepper extends StatelessWidget {
       decoration: _cardDecoration(),
       child: Row(
         children: [
-          _StepperColumn(
-            value: '$year년',
-            onAdd: () => onYear(1),
-            onSub: () => onYear(-1),
+          _DateWheelColumn(
+            values: List.generate(
+              DateTime.now().year - 1899,
+              (index) => 1900 + index,
+            ),
+            selectedValue: year,
+            suffix: '년',
+            onChanged: onYear,
           ),
           const SizedBox(width: 8),
-          _StepperColumn(
-            value: '$month월',
-            onAdd: () => onMonth(1),
-            onSub: () => onMonth(-1),
+          _DateWheelColumn(
+            values: List.generate(12, (index) => index + 1),
+            selectedValue: month,
+            suffix: '월',
+            onChanged: onMonth,
           ),
           const SizedBox(width: 8),
-          _StepperColumn(
-            value: '$day일',
-            onAdd: () => onDay(1),
-            onSub: () => onDay(-1),
+          _DateWheelColumn(
+            values: List.generate(
+              _daysInMonth(year, month),
+              (index) => index + 1,
+            ),
+            selectedValue: day,
+            suffix: '일',
+            onChanged: onDay,
           ),
         ],
       ),
@@ -2655,47 +2873,135 @@ class _DateStepper extends StatelessWidget {
   }
 }
 
-class _StepperColumn extends StatelessWidget {
-  const _StepperColumn({
-    required this.value,
-    required this.onAdd,
-    required this.onSub,
+class _DateWheelColumn extends StatefulWidget {
+  const _DateWheelColumn({
+    required this.values,
+    required this.selectedValue,
+    required this.suffix,
+    required this.onChanged,
   });
-  final String value;
-  final VoidCallback onAdd;
-  final VoidCallback onSub;
+
+  final List<int> values;
+  final int selectedValue;
+  final String suffix;
+  final ValueChanged<int> onChanged;
+
+  @override
+  State<_DateWheelColumn> createState() => _DateWheelColumnState();
+}
+
+class _DateWheelColumnState extends State<_DateWheelColumn> {
+  late FixedExtentScrollController _controller;
+
+  int get _selectedIndex => widget.values
+      .indexOf(widget.selectedValue)
+      .clamp(0, widget.values.length - 1);
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = FixedExtentScrollController(initialItem: _selectedIndex);
+  }
+
+  @override
+  void didUpdateWidget(covariant _DateWheelColumn oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_controller.hasClients &&
+        (oldWidget.selectedValue != widget.selectedValue ||
+            oldWidget.values.length != widget.values.length)) {
+      _controller.jumpToItem(_selectedIndex);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _moveBy(int offset) async {
+    final target = (_selectedIndex + offset).clamp(0, widget.values.length - 1);
+    if (target == _selectedIndex || !_controller.hasClients) return;
+    await _controller.animateToItem(
+      target,
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOutCubic,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return Expanded(
-      child: Column(
-        children: [
-          IconButton(
-            onPressed: onSub,
-            icon: const Icon(Icons.keyboard_arrow_up, color: _brown),
-          ),
-          Container(
-            height: 38,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: const Color(0xFFF8EFE8),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: _line),
-            ),
-            child: Text(
-              value,
-              style: const TextStyle(
-                fontSize: 16,
+      child: SizedBox(
+        height: 150,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            Positioned(
+              top: 0,
+              child: IconButton(
+                tooltip: '이전 값',
+                onPressed: _selectedIndex > 0 ? () => _moveBy(-1) : null,
+                icon: const Icon(Icons.keyboard_arrow_up),
                 color: _brown,
-                fontWeight: FontWeight.w900,
+                disabledColor: _line,
               ),
             ),
-          ),
-          IconButton(
-            onPressed: onAdd,
-            icon: const Icon(Icons.keyboard_arrow_down, color: _brown),
-          ),
-        ],
+            Center(
+              child: Container(
+                height: 42,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8EFE8),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: _line),
+                ),
+              ),
+            ),
+            Positioned.fill(
+              top: 34,
+              bottom: 34,
+              child: ListWheelScrollView.useDelegate(
+                controller: _controller,
+                itemExtent: 42,
+                diameterRatio: 1.5,
+                physics: const FixedExtentScrollPhysics(),
+                overAndUnderCenterOpacity: 0.4,
+                onSelectedItemChanged: (index) {
+                  widget.onChanged(widget.values[index]);
+                },
+                childDelegate: ListWheelChildBuilderDelegate(
+                  childCount: widget.values.length,
+                  builder: (context, index) => Center(
+                    child: Text(
+                      '${widget.values[index]}${widget.suffix}',
+                      style: TextStyle(
+                        fontSize: 16,
+                        color: index == _selectedIndex
+                            ? _brown
+                            : const Color(0xFFC1ADA1),
+                        fontWeight: index == _selectedIndex
+                            ? FontWeight.w900
+                            : FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              bottom: 0,
+              child: IconButton(
+                tooltip: '다음 값',
+                onPressed: _selectedIndex < widget.values.length - 1
+                    ? () => _moveBy(1)
+                    : null,
+                icon: const Icon(Icons.keyboard_arrow_down),
+                color: _brown,
+                disabledColor: _line,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -2719,20 +3025,31 @@ class _HourStepper extends StatelessWidget {
           onPressed: onSub,
           icon: const Icon(Icons.keyboard_arrow_up, color: _brown),
         ),
-        Container(
-          height: 42,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: const Color(0xFFF8EFE8),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: _brown.withValues(alpha: .35)),
-          ),
-          child: Text(
-            _hourText(hour),
-            style: const TextStyle(
-              fontSize: 14,
-              color: _brown,
-              fontWeight: FontWeight.w900,
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onVerticalDragEnd: (details) {
+            final velocity = details.primaryVelocity ?? 0;
+            if (velocity < -100) {
+              onAdd();
+            } else if (velocity > 100) {
+              onSub();
+            }
+          },
+          child: Container(
+            height: 42,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8EFE8),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: _brown.withValues(alpha: .35)),
+            ),
+            child: Text(
+              _hourText(hour),
+              style: const TextStyle(
+                fontSize: 14,
+                color: _brown,
+                fontWeight: FontWeight.w900,
+              ),
             ),
           ),
         ),
@@ -2811,31 +3128,31 @@ class _VoiceRow extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         child: Row(
-        children: [
-          _IconBox(
-            icon: Icons.mic_none,
-            fill: checked ? _brown : const Color(0xFFF8EFE8),
-            iconColor: checked ? Colors.white : _brown,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(name, style: _rowTitle()),
-                Text(subtitle, style: _tiny()),
-                if (progress != null) ...[
-                  const SizedBox(height: 6),
-                  LinearProgressIndicator(
-                    value: progress,
-                    minHeight: 3,
-                    color: _yellow,
-                    backgroundColor: _line,
-                  ),
-                ],
-              ],
+          children: [
+            _IconBox(
+              icon: Icons.mic_none,
+              fill: checked ? _brown : const Color(0xFFF8EFE8),
+              iconColor: checked ? Colors.white : _brown,
             ),
-          ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(name, style: _rowTitle()),
+                  Text(subtitle, style: _tiny()),
+                  if (progress != null) ...[
+                    const SizedBox(height: 6),
+                    LinearProgressIndicator(
+                      value: progress,
+                      minHeight: 3,
+                      color: _yellow,
+                      backgroundColor: _line,
+                    ),
+                  ],
+                ],
+              ),
+            ),
             if (checked) const Icon(Icons.check_circle, color: _brown),
           ],
         ),
@@ -2922,50 +3239,46 @@ class _FamilyRow extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
         child: Row(
-        children: [
-          _Avatar(
-            label: _initial(name),
-            size: 40,
-            color: _brown,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Text(name, style: _rowTitle()),
-                    const SizedBox(width: 6),
-                    for (final badge in badges)
-                      Padding(
-                        padding: const EdgeInsets.only(right: 4),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFFFF3D2),
-                            borderRadius: BorderRadius.circular(99),
-                          ),
-                          child: Text(
-                            badge,
-                            style: const TextStyle(
-                              fontSize: 8,
-                              color: _brown,
-                              fontWeight: FontWeight.w900,
+          children: [
+            _Avatar(label: _initial(name), size: 40, color: _brown),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(name, style: _rowTitle()),
+                      const SizedBox(width: 6),
+                      for (final badge in badges)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 4),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFFF3D2),
+                              borderRadius: BorderRadius.circular(99),
+                            ),
+                            child: Text(
+                              badge,
+                              style: const TextStyle(
+                                fontSize: 8,
+                                color: _brown,
+                                fontWeight: FontWeight.w900,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 3),
-                Text(role, style: _tiny()),
-              ],
+                    ],
+                  ),
+                  const SizedBox(height: 3),
+                  Text(role, style: _tiny()),
+                ],
+              ),
             ),
-          ),
             if (onLongPress != null)
               const Icon(Icons.chevron_right, color: _muted, size: 18),
           ],

@@ -5,6 +5,8 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../4. home/home_and_alert_center.dart';
+import '../6. chat/family_chat_screen.dart';
+import '../9. set/settings_flow.dart';
 
 const Color _bg = Color(0xFFFBF6EE);
 const Color _brown = Color(0xFF936249);
@@ -252,13 +254,20 @@ class _Header extends StatelessWidget {
       height: 40.h,
       child: Row(
         children: [
-          GestureDetector(
-            onTap: onBack ?? () => Navigator.maybePop(context),
-            child: SizedBox(
-              width: 34.w,
-              height: 34.w,
-              child: Icon(Icons.chevron_left, size: 25.sp, color: _dark),
-            ),
+          IconButton(
+            tooltip: '뒤로 가기',
+            onPressed:
+                onBack ??
+                () => Navigator.of(context, rootNavigator: true)
+                    .pushAndRemoveUntil(
+                      MaterialPageRoute(
+                        builder: (_) => const HomeAndAlertPreview(),
+                      ),
+                      (_) => false,
+                    ),
+            icon: Icon(Icons.chevron_left, size: 28.sp, color: _dark),
+            padding: EdgeInsets.zero,
+            constraints: BoxConstraints(minWidth: 44.w, minHeight: 40.h),
           ),
           Expanded(
             child: Text(
@@ -547,6 +556,21 @@ class _SuccessMark extends StatelessWidget {
 class _MemoryNavBar extends StatelessWidget {
   const _MemoryNavBar();
 
+  void _openTab(BuildContext context, String label) {
+    final Widget? screen = switch (label) {
+      '홈' => const HomeAndAlertPreview(),
+      '대화' => const FamilyChatScreen(),
+      '설정' => const SettingsFlow(),
+      _ => null,
+    };
+
+    if (screen == null) return;
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (_) => screen),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final items = [
@@ -574,29 +598,41 @@ class _MemoryNavBar extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           for (final item in items)
-            Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(item.$1, size: 22.sp, color: item.$3 ? _yellow : _muted),
-                SizedBox(height: 3.h),
-                Text(
-                  item.$2,
-                  style: TextStyle(
-                    fontSize: 10.sp,
-                    color: item.$3 ? _brown : _muted,
-                    fontWeight: FontWeight.w800,
-                  ),
+            InkWell(
+              onTap: item.$3 ? null : () => _openTab(context, item.$2),
+              borderRadius: BorderRadius.circular(14.r),
+              child: SizedBox(
+                width: 58.w,
+                height: 62.h,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      item.$1,
+                      size: 22.sp,
+                      color: item.$3 ? _yellow : _muted,
+                    ),
+                    SizedBox(height: 3.h),
+                    Text(
+                      item.$2,
+                      style: TextStyle(
+                        fontSize: 10.sp,
+                        color: item.$3 ? _brown : _muted,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    SizedBox(height: 2.h),
+                    Container(
+                      width: 4.w,
+                      height: 4.w,
+                      decoration: BoxDecoration(
+                        color: item.$3 ? _yellow : Colors.transparent,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ],
                 ),
-                SizedBox(height: 2.h),
-                Container(
-                  width: 4.w,
-                  height: 4.w,
-                  decoration: BoxDecoration(
-                    color: item.$3 ? _yellow : Colors.transparent,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-              ],
+              ),
             ),
         ],
       ),

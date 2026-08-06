@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
+import '../4. home/home_and_alert_center.dart';
 import '../5. memory/memory_add_flow.dart';
+import '../9. set/settings_flow.dart';
 
 const Color _bg = Color(0xFFFBF6EE);
 const Color _brown = Color(0xFF936249);
@@ -602,15 +604,17 @@ class _ChatNavBar extends StatelessWidget {
             GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: () {
-                if (item.$2 == '홈') {
-                  Navigator.maybePop(context);
-                }
-                if (item.$2 == '추억') {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const MemoryAddFlow()),
-                  );
-                }
+                final Widget? screen = switch (item.$2) {
+                  '홈' => const HomeAndAlertPreview(),
+                  '추억' => const MemoryAddFlow(),
+                  '설정' => const SettingsFlow(),
+                  _ => null,
+                };
+                if (screen == null) return;
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(builder: (_) => screen),
+                );
               },
               child: SizedBox(
                 width: 52,
