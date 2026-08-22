@@ -1,5 +1,8 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../4. home/home_and_alert_center.dart';
 import '../5. memory/memory_add_flow.dart';
@@ -104,6 +107,31 @@ class _FamilyChatScreenState extends State<FamilyChatScreen> {
       _messageController.clear();
     });
 
+    _scrollToBottom();
+  }
+
+  Future<void> _pickAndSendPhoto() async {
+    final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
+    if (picked == null) return;
+    final bytes = await picked.readAsBytes();
+    if (!mounted) return;
+
+    setState(() {
+      _messages.add(
+        _ChatMessage(
+          sender: '나',
+          time: _formatNow(),
+          text: '',
+          mine: true,
+          kind: _MessageKind.photo,
+          imageBytes: bytes,
+        ),
+      );
+    });
+    _scrollToBottom();
+  }
+
+  void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_scrollController.hasClients) return;
       _scrollController.animateTo(
@@ -144,6 +172,7 @@ class _FamilyChatScreenState extends State<FamilyChatScreen> {
             controller: _messageController,
             canSend: _hasText,
             onSend: _sendMessage,
+            onPhoto: _pickAndSendPhoto,
           ),
           const SizedBox(height: 10),
           const _ChatNavBar(),
@@ -270,7 +299,7 @@ class _MessageRow extends StatelessWidget {
         sender: message.sender,
         time: message.time,
         mine: message.mine,
-        child: const _PhotoBubble(),
+        child: _PhotoBubble(imageBytes: message.imageBytes),
       );
     }
 
@@ -450,7 +479,9 @@ class _NoticeBubble extends StatelessWidget {
 }
 
 class _PhotoBubble extends StatelessWidget {
-  const _PhotoBubble();
+  const _PhotoBubble({this.imageBytes});
+
+  final Uint8List? imageBytes;
 
   @override
   Widget build(BuildContext context) {
@@ -463,7 +494,10 @@ class _PhotoBubble extends StatelessWidget {
             color: const Color(0xFFC48F70),
             borderRadius: BorderRadius.circular(10),
           ),
-          child: CustomPaint(painter: _PhotoPainter()),
+          clipBehavior: Clip.antiAlias,
+          child: imageBytes == null
+              ? CustomPaint(painter: _PhotoPainter())
+              : Image.memory(imageBytes!, fit: BoxFit.cover),
         ),
         Positioned(
           top: 8,
@@ -494,11 +528,13 @@ class _InputBar extends StatelessWidget {
     required this.controller,
     required this.canSend,
     required this.onSend,
+    required this.onPhoto,
   });
 
   final TextEditingController controller;
   final bool canSend;
   final VoidCallback onSend;
+  final VoidCallback onPhoto;
 
   @override
   Widget build(BuildContext context) {
@@ -513,7 +549,7 @@ class _InputBar extends StatelessWidget {
       child: Row(
         children: [
           GestureDetector(
-            onTap: () {},
+            onTap: onPhoto,
             child: Container(
               width: 32,
               height: 32,
@@ -697,6 +733,7 @@ class _ChatMessage {
     required this.text,
     this.mine = false,
     this.kind = _MessageKind.text,
+    this.imageBytes,
   });
 
   final String sender;
@@ -704,4 +741,5 @@ class _ChatMessage {
   final String text;
   final bool mine;
   final _MessageKind kind;
+  final Uint8List? imageBytes;
 }
