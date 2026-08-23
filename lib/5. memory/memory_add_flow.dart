@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import '../4. home/home_and_alert_center.dart';
 import '../6. chat/family_chat_screen.dart';
 import '../9. set/settings_flow.dart';
+import '../services/session_store.dart';
 
 const Color _bg = Color(0xFFFBF6EE);
 const Color _brown = Color(0xFF936249);
@@ -130,7 +131,7 @@ class _MemoryAddScreenState extends State<MemoryAddScreen> {
                       _TextFieldBox(
                         controller: _storyController,
                         hintText:
-                            '예: 작년 가을 손주 운동회 때 어머님이 도시락 만들어주신 날이에요. 날씨가 엄청 좋았는데, 서연이가 달리기 1등했었어요.',
+                            '예: 작년 가을 손주 운동회 때 ${SessionStore.elderHonorific}이 도시락 만들어주신 날이에요. 날씨가 엄청 좋았는데, 서연이가 달리기 1등했었어요.',
                         maxLines: 6,
                       ),
                       SizedBox(height: 8.h),
@@ -503,7 +504,7 @@ class _GuideBox extends StatelessWidget {
           SizedBox(width: 10.w),
           Expanded(
             child: Text(
-              '인형은 이 추억을 자연스러운 대화로 어머님께 들려드려요.\n정확한 단어는 다르게 표현될 수 있어요.',
+              '인형은 이 추억을 자연스러운 대화로 ${SessionStore.elderHonorific}께 들려드려요.\n정확한 단어는 다르게 표현될 수 있어요.',
               style: TextStyle(
                 fontSize: 11.sp,
                 color: _muted,

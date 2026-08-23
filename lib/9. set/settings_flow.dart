@@ -941,7 +941,10 @@ class _DollVolumeScreenState extends State<DollVolumeScreen> {
             child: ListView(
               physics: const BouncingScrollPhysics(),
               children: [
-                Text('어머님이 편하게 들으실 수 있는 볼륨으로 맞춰주세요.', style: _caption()),
+                Text(
+                  '${SessionStore.elderHonorific}이 편하게 들으실 수 있는 볼륨으로 맞춰주세요.',
+                  style: _caption(),
+                ),
                 SizedBox(height: 22.h),
                 Container(
                   padding: const EdgeInsets.all(22),
@@ -1192,7 +1195,12 @@ class _ElderInfoEditScreenState extends State<ElderInfoEditScreen> {
                             child: _ChoiceChipButton(
                               text: item,
                               selected: gender == item,
-                              onTap: () => setState(() => gender = item),
+                              onTap: () {
+                                SessionStore.setElderGender(
+                                  item == '남성' ? 'male' : 'female',
+                                );
+                                setState(() => gender = item);
+                              },
                             ),
                           ),
                         ),
@@ -1801,7 +1809,7 @@ class _QuietHoursBodyState extends State<_QuietHoursBody> {
                     onChanged: (v) => setState(() => urgent = v),
                   ),
                   _SwitchLine(
-                    title: '어머님이 "모리야" 부르시면 깨우기',
+                    title: '${SessionStore.elderHonorific}이 "모리야" 부르시면 깨우기',
                     subtitle: '이 시간에도 부르시면 모리가 응답해드려요',
                     value: wake,
                     onChanged: (v) => setState(() => wake = v),
@@ -2673,7 +2681,7 @@ class _NotificationGroup extends StatelessWidget {
               .map(
                 (name) => _SwitchLine(
                   icon: _notificationIcon(name),
-                  title: name,
+                  title: _notificationDisplayName(name),
                   subtitle: _notificationSubtitle(name),
                   value: values[name] ?? false,
                   onChanged: (v) => onChanged(name, v),
@@ -2702,12 +2710,19 @@ String _notificationSubtitle(String name) {
     '기기 연결 해제' => '인형이 끊겼을 때',
     '약 미복용' => '알림 후 10분 내 확인 안 됨',
     '어머님 음성 요청' => '가족과 이야기하고 싶다고 하실 때',
-    '메시지 전달 완료' => '인형이 어머님께 읽어드렸을 때',
+    '메시지 전달 완료' => '인형이 ${SessionStore.elderHonorific}께 읽어드렸을 때',
     '목소리 학습 완료' => '내 목소리 클로닝이 끝났을 때',
     '데일리 리포트' => '매일 아침 7시',
     '주간 리포트' => '매주 월요일 아침',
     _ => '새 기능 안내',
   };
+}
+
+String _notificationDisplayName(String name) {
+  if (name == '어머님 음성 요청') {
+    return '${SessionStore.elderHonorific} 음성 요청';
+  }
+  return name;
 }
 
 class _InputField extends StatelessWidget {

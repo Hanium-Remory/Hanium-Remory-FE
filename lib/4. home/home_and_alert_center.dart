@@ -8,6 +8,7 @@ import '../6. chat/family_chat_screen.dart';
 import '../7. report/daily_report_screen.dart';
 import '../8. vocie/voice_record_flow.dart';
 import '../9. set/settings_flow.dart';
+import '../services/session_store.dart';
 
 const Color _bg = Color(0xFFFBF6EE);
 const Color _brown = Color(0xFF936249);
@@ -200,7 +201,7 @@ class _AlertCenterScreenState extends State<AlertCenterScreen> {
   @override
   Widget build(BuildContext context) {
     final alerts = <Widget>[
-      const _AlertCard(
+      _AlertCard(
         icon: Icons.warning_amber_rounded,
         label: '긴급',
         title: '어머니의 감정이 평소와 달라요',
@@ -222,9 +223,9 @@ class _AlertCenterScreenState extends State<AlertCenterScreen> {
           );
         },
       ),
-      const _AlertCard(
+      _AlertCard(
         icon: Icons.chat_bubble_outline,
-        title: '어머님이 가족들과 이야기하고 싶다고 하셨어요',
+        title: '${SessionStore.elderHonorific}이 가족들과 이야기하고 싶다고 하셨어요',
         body: '"우리 손주들은 크고 있나. 요새 잘 지내나 모르겠어..."',
         action: '대화방 열기',
       ),
@@ -234,9 +235,9 @@ class _AlertCenterScreenState extends State<AlertCenterScreen> {
         body: '14분 만에 다시 연결되었어요. 와이파이 신호를 확인해보세요.',
         action: '연결 설정',
       ),
-      const _AlertCard(
+      _AlertCard(
         icon: Icons.mic_none,
-        title: '어머님이 녹음하신 목소리를 들으셨어요',
+        title: '${SessionStore.elderHonorific}이 녹음하신 목소리를 들으셨어요',
         body: '목소리를 두 번 들으셨어요.',
       ),
     ];

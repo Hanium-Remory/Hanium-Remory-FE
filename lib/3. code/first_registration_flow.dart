@@ -143,13 +143,18 @@ class _FirstRegistrationFlowState extends State<FirstRegistrationFlow> {
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
         backgroundColor: Colors.white,
-        title: const Text('인증번호 입력', style: TextStyle(fontWeight: FontWeight.w900)),
+        title: const Text(
+          '인증번호 입력',
+          style: TextStyle(fontWeight: FontWeight.w900),
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('$phone 로 보낸 6자리 번호를 입력하세요.',
-                style: const TextStyle(fontSize: 12, color: _muted)),
+            Text(
+              '$phone 로 보낸 6자리 번호를 입력하세요.',
+              style: const TextStyle(fontSize: 12, color: _muted),
+            ),
             const SizedBox(height: 12),
             TextField(
               controller: controller,
@@ -171,7 +176,10 @@ class _FirstRegistrationFlowState extends State<FirstRegistrationFlow> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, controller.text),
-            child: const Text('확인', style: TextStyle(color: _brown, fontWeight: FontWeight.w800)),
+            child: const Text(
+              '확인',
+              style: TextStyle(color: _brown, fontWeight: FontWeight.w800),
+            ),
           ),
         ],
       ),
@@ -303,10 +311,7 @@ class _FaceSignupPage extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(height: 40.h),
-          Text(
-            '비밀번호 없이\n한 번만 기억해요',
-            style: _titleStyle(),
-          ),
+          Text('비밀번호 없이\n한 번만 기억해요', style: _titleStyle()),
           SizedBox(height: 10.h),
           Text(
             'Face ID로 안전하게 기억하고,\n다음부터는 자동으로 로그인해요.\n비밀번호를 기억하지 않으셔도 돼요.',
@@ -314,19 +319,10 @@ class _FaceSignupPage extends StatelessWidget {
           ),
           const Spacer(),
           Center(
-            child: Icon(
-              Icons.center_focus_weak,
-              size: 70.sp,
-              color: _brown,
-            ),
+            child: Icon(Icons.center_focus_weak, size: 70.sp, color: _brown),
           ),
           SizedBox(height: 34.h),
-          Center(
-            child: Text(
-              'Face ID 버튼을 눌러 시작하세요',
-              style: _smallStyle(),
-            ),
-          ),
+          Center(child: Text('Face ID 버튼을 눌러 시작하세요', style: _smallStyle())),
           const Spacer(),
           _BottomButton(text: 'Face ID로 시작하기', onTap: onNext),
           SizedBox(height: 18.h),
@@ -381,7 +377,7 @@ class _GuardianInfoPageState extends State<_GuardianInfoPage> {
             keyboardType: TextInputType.phone,
           ),
           SizedBox(height: 14.h),
-          _Label('아버님/어머님과의 관계'),
+          _Label('보호자와의 관계'),
           Wrap(
             spacing: 8.w,
             runSpacing: 8.h,
@@ -436,7 +432,7 @@ class _PatientInfoPageState extends State<_PatientInfoPage> {
           SizedBox(height: 40.h),
           _StepText(current: 2, total: 2),
           SizedBox(height: 6.h),
-          Text('돌보실 분에 대해 알려주세요', style: _sectionTitle()),
+          Text('보호자에 대해 알려주세요', style: _sectionTitle()),
           SizedBox(height: 22.h),
           _Label('이름'),
           _TextBox(controller: _nameController, hintText: '이름을 입력하세요'),
@@ -448,7 +444,10 @@ class _PatientInfoPageState extends State<_PatientInfoPage> {
                 child: _WideChoice(
                   text: '여성',
                   selected: _selectedGender == '여성',
-                  onTap: () => setState(() => _selectedGender = '여성'),
+                  onTap: () {
+                    SessionStore.setElderGender('female');
+                    setState(() => _selectedGender = '여성');
+                  },
                 ),
               ),
               SizedBox(width: 8.w),
@@ -456,7 +455,10 @@ class _PatientInfoPageState extends State<_PatientInfoPage> {
                 child: _WideChoice(
                   text: '남성',
                   selected: _selectedGender == '남성',
-                  onTap: () => setState(() => _selectedGender = '남성'),
+                  onTap: () {
+                    SessionStore.setElderGender('male');
+                    setState(() => _selectedGender = '남성');
+                  },
                 ),
               ),
             ],
@@ -518,10 +520,7 @@ class _FamilyConnectPage extends StatelessWidget {
           SizedBox(height: 6.h),
           Text('가족과 함께 돌봐요', style: _sectionTitle()),
           SizedBox(height: 8.h),
-          Text(
-            '형제, 자매, 배우자도 함께 사용자의 일상을 챙길 수 있어요.',
-            style: _bodyStyle(),
-          ),
+          Text('형제, 자매, 배우자도 함께 사용자의 일상을 챙길 수 있어요.', style: _bodyStyle()),
           SizedBox(height: 30.h),
           _ActionCard(
             icon: Icons.person_add_alt_1,
@@ -652,11 +651,7 @@ class _InviteCodeCreatePageState extends State<_InviteCodeCreatePage> {
                 : SizedBox(key: const ValueKey('hidden'), height: 32.h),
           ),
           SizedBox(height: 10.h),
-          _BottomButton(
-            text: '복사하기',
-            icon: Icons.copy,
-            onTap: _copyCode,
-          ),
+          _BottomButton(text: '복사하기', icon: Icons.copy, onTap: _copyCode),
           SizedBox(height: 10.h),
           _BottomButton(
             text: '공유하기',
@@ -816,10 +811,7 @@ class _WideChoice extends StatelessWidget {
 }
 
 class _ScrollDateColumn extends StatefulWidget {
-  const _ScrollDateColumn({
-    required this.values,
-    required this.initialIndex,
-  });
+  const _ScrollDateColumn({required this.values, required this.initialIndex});
 
   final List<String> values;
   final int initialIndex;
@@ -833,10 +825,7 @@ class _ScrollDateColumnState extends State<_ScrollDateColumn> {
   late int _selectedIndex;
 
   Future<void> _moveBy(int offset) async {
-    final target = (_selectedIndex + offset).clamp(
-      0,
-      widget.values.length - 1,
-    );
+    final target = (_selectedIndex + offset).clamp(0, widget.values.length - 1);
     if (target == _selectedIndex || !_controller.hasClients) return;
 
     await _controller.animateToItem(
@@ -873,10 +862,7 @@ class _ScrollDateColumnState extends State<_ScrollDateColumn> {
                 tooltip: '이전 값',
                 onPressed: _selectedIndex > 0 ? () => _moveBy(-1) : null,
                 padding: EdgeInsets.zero,
-                constraints: BoxConstraints.tightFor(
-                  width: 44.w,
-                  height: 28.h,
-                ),
+                constraints: BoxConstraints.tightFor(width: 44.w, height: 28.h),
                 icon: Icon(Icons.keyboard_arrow_up, size: 18.sp),
                 color: _brown,
                 disabledColor: _line,
@@ -913,10 +899,10 @@ class _ScrollDateColumnState extends State<_ScrollDateColumn> {
                         widget.values[index],
                         style: TextStyle(
                           fontSize: 12.sp,
-                          fontWeight:
-                              isSelected ? FontWeight.w800 : FontWeight.w500,
-                          color:
-                              isSelected ? _brown : const Color(0xFFC1ADA1),
+                          fontWeight: isSelected
+                              ? FontWeight.w800
+                              : FontWeight.w500,
+                          color: isSelected ? _brown : const Color(0xFFC1ADA1),
                         ),
                       ),
                     );
@@ -932,10 +918,7 @@ class _ScrollDateColumnState extends State<_ScrollDateColumn> {
                     ? () => _moveBy(1)
                     : null,
                 padding: EdgeInsets.zero,
-                constraints: BoxConstraints.tightFor(
-                  width: 44.w,
-                  height: 28.h,
-                ),
+                constraints: BoxConstraints.tightFor(width: 44.w, height: 28.h),
                 icon: Icon(Icons.keyboard_arrow_down, size: 18.sp),
                 color: _brown,
                 disabledColor: _line,
@@ -1027,7 +1010,9 @@ class _BottomButton extends StatelessWidget {
               ? (pale ? const Color(0xFFF1E4D9) : _brown)
               : const Color(0xFFD2C5BC),
           foregroundColor: pale ? _brown : Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8.r)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8.r),
+          ),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -1109,11 +1094,7 @@ TextStyle _smallStyle() {
 }
 
 TextStyle _cardTitle() {
-  return TextStyle(
-    fontSize: 12.sp,
-    color: _dark,
-    fontWeight: FontWeight.w800,
-  );
+  return TextStyle(fontSize: 12.sp, color: _dark, fontWeight: FontWeight.w800);
 }
 
 TextStyle _buttonTextStyle(double size) {

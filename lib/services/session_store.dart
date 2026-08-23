@@ -6,6 +6,21 @@ class SessionStore {
   static const _kAccess = 'access_token';
   static const _kProtectorId = 'protector_id';
   static const _kSeenOnboarding = 'seen_onboarding';
+  static const _kElderGender = 'elder_gender';
+
+  static String elderGender = 'female';
+  static String get elderHonorific => elderGender == 'male' ? '아버님' : '어머님';
+
+  static Future<void> initialize() async {
+    final p = await SharedPreferences.getInstance();
+    elderGender = p.getString(_kElderGender) ?? 'female';
+  }
+
+  static Future<void> setElderGender(String gender) async {
+    elderGender = gender == 'male' ? 'male' : 'female';
+    final p = await SharedPreferences.getInstance();
+    await p.setString(_kElderGender, elderGender);
+  }
 
   /// 로그인/가입 성공 시 토큰 저장.
   static Future<void> saveSession({

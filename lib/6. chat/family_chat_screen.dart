@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import '../4. home/home_and_alert_center.dart';
 import '../5. memory/memory_add_flow.dart';
 import '../9. set/settings_flow.dart';
+import '../services/session_store.dart';
 
 const Color _bg = Color(0xFFFBF6EE);
 const Color _brown = Color(0xFF936249);
@@ -570,9 +571,9 @@ class _InputBar extends StatelessWidget {
               onSubmitted: (_) {
                 if (canSend) onSend();
               },
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 isDense: true,
-                hintText: '어머님께 전할 말을 입력하세요',
+                hintText: '${SessionStore.elderHonorific}께 전할 말을 입력하세요',
                 hintStyle: TextStyle(
                   fontSize: 12,
                   color: Color(0xFFB8AAA0),

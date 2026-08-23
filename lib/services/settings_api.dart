@@ -30,8 +30,8 @@ class ApiException implements Exception {
 
 class SettingsApi {
   SettingsApi({String? baseUrl, http.Client? client})
-      : baseUrl = baseUrl ?? kBackendBaseUrl,
-        _client = client ?? http.Client();
+    : baseUrl = baseUrl ?? kBackendBaseUrl,
+      _client = client ?? http.Client();
 
   final String baseUrl;
   final http.Client _client;
@@ -64,7 +64,10 @@ class SettingsApi {
     final res = await http.Response.fromStream(streamed);
 
     // 만료된 access 토큰이면 한 번만 재발급 후 재시도.
-    if (res.statusCode == 401 && auth && allowRetry && await _refreshSession()) {
+    if (res.statusCode == 401 &&
+        auth &&
+        allowRetry &&
+        await _refreshSession()) {
       return _send(method, path, body: body, auth: auth, allowRetry: false);
     }
 
@@ -72,7 +75,10 @@ class SettingsApi {
     try {
       decoded = jsonDecode(res.body) as Map<String, dynamic>;
     } catch (_) {
-      throw ApiException('서버 응답을 읽을 수 없습니다. (${res.statusCode})', res.statusCode);
+      throw ApiException(
+        '서버 응답을 읽을 수 없습니다. (${res.statusCode})',
+        res.statusCode,
+      );
     }
 
     if (res.statusCode >= 400) {
@@ -97,8 +103,9 @@ class SettingsApi {
         body: jsonEncode({'refreshToken': refresh}),
       );
       if (res.statusCode >= 400) return false;
-      final data = (jsonDecode(res.body) as Map<String, dynamic>)['data']
-          as Map<String, dynamic>;
+      final data =
+          (jsonDecode(res.body) as Map<String, dynamic>)['data']
+              as Map<String, dynamic>;
       await SessionStore.saveTokens(
         accessToken: data['accessToken'] as String,
         refreshToken: data['refreshToken'] as String,
@@ -110,8 +117,16 @@ class SettingsApi {
   }
 
   // ── 보호자 프로필 ──────────────────────────────────
-  Future<MyProfile> myProfile() async =>
-      MyProfile.fromJson(await _get('/protectors/me'));
+  Future<MyProfile> myProfile() async {
+    final profile = MyProfile.fromJson(await _get('/protectors/me'));
+    final linkedUser = profile.mainUser;
+    if (linkedUser != null) {
+      final userData = await _get('/users/${linkedUser.userId}');
+      final gender = ElderUser.fromJson(userData).gender;
+      if (gender != null) await SessionStore.setElderGender(gender);
+    }
+    return profile;
+  }
 
   Future<MyProfile> updateProfile({
     String? name,
@@ -192,9 +207,11 @@ class SettingsApi {
     return DeviceSettings.fromJson(d as Map<String, dynamic>);
   }
 
-  Future<void> setDefaultVoice(int deviceId, int voiceId) async =>
-      _send('PATCH', '/devices/$deviceId/settings/voice',
-          body: {'voiceId': voiceId});
+  Future<void> setDefaultVoice(int deviceId, int voiceId) async => _send(
+    'PATCH',
+    '/devices/$deviceId/settings/voice',
+    body: {'voiceId': voiceId},
+  );
 
   // ── 방해 금지 시간 ─────────────────────────────────
   Future<DndSettings> dnd(int deviceId) async =>
@@ -431,17 +448,18 @@ class MyProfile {
   });
 
   factory MyProfile.fromJson(Map<String, dynamic> json) => MyProfile(
-        protectorId: json['protectorId'] as int,
-        name: json['name'] as String? ?? '보호자',
-        phoneNumber: json['phoneNumber'] as String?,
-        relation: json['relation'] as String?,
-        profileImageUrl: json['profileImageUrl'] as String?,
-        users: (json['users'] as List? ?? [])
-            .map((e) => LinkedUser.fromJson(e as Map<String, dynamic>))
-            .toList(),
-        notifications:
-            _boolMap(json['notificationSettings'] as Map<String, dynamic>),
-      );
+    protectorId: json['protectorId'] as int,
+    name: json['name'] as String? ?? '보호자',
+    phoneNumber: json['phoneNumber'] as String?,
+    relation: json['relation'] as String?,
+    profileImageUrl: json['profileImageUrl'] as String?,
+    users: (json['users'] as List? ?? [])
+        .map((e) => LinkedUser.fromJson(e as Map<String, dynamic>))
+        .toList(),
+    notifications: _boolMap(
+      json['notificationSettings'] as Map<String, dynamic>,
+    ),
+  );
 
   final int protectorId;
   final String name;
@@ -473,11 +491,11 @@ class LinkedUser {
   });
 
   factory LinkedUser.fromJson(Map<String, dynamic> json) => LinkedUser(
-        userId: json['userId'] as int,
-        name: json['name'] as String,
-        deviceId: json['deviceId'] as int?,
-        isPrimary: json['isPrimary'] == true,
-      );
+    userId: json['userId'] as int,
+    name: json['name'] as String,
+    deviceId: json['deviceId'] as int?,
+    isPrimary: json['isPrimary'] == true,
+  );
 
   final int userId;
   final String name;
@@ -498,17 +516,17 @@ class ElderUser {
   });
 
   factory ElderUser.fromJson(Map<String, dynamic> json) => ElderUser(
-        userId: json['userId'] as int,
-        name: json['name'] as String,
-        gender: json['gender'] as String?,
-        birthDate: json['birthDate'] == null
-            ? null
-            : DateTime.parse(json['birthDate'] as String),
-        age: json['age'] as int?,
-        photoUrl: json['photoUrl'] as String?,
-        note: json['note'] as String? ?? '',
-        deviceId: json['deviceId'] as int?,
-      );
+    userId: json['userId'] as int,
+    name: json['name'] as String,
+    gender: json['gender'] as String?,
+    birthDate: json['birthDate'] == null
+        ? null
+        : DateTime.parse(json['birthDate'] as String),
+    age: json['age'] as int?,
+    photoUrl: json['photoUrl'] as String?,
+    note: json['note'] as String? ?? '',
+    deviceId: json['deviceId'] as int?,
+  );
 
   final int userId;
   final String name;
@@ -520,10 +538,10 @@ class ElderUser {
   final int? deviceId;
 
   String get genderText => switch (gender) {
-        'female' => '여성',
-        'male' => '남성',
-        _ => '미입력',
-      };
+    'female' => '여성',
+    'male' => '남성',
+    _ => '미입력',
+  };
 
   String get birthText => birthDate == null
       ? '미입력'
@@ -569,12 +587,12 @@ class FamilyMember {
   });
 
   factory FamilyMember.fromJson(Map<String, dynamic> json) => FamilyMember(
-        protectorId: json['protectorId'] as int,
-        name: json['name'] as String,
-        relation: json['relation'] as String?,
-        isPrimary: json['isPrimary'] == true,
-        isMe: json['isMe'] == true,
-      );
+    protectorId: json['protectorId'] as int,
+    name: json['name'] as String,
+    relation: json['relation'] as String?,
+    isPrimary: json['isPrimary'] == true,
+    isMe: json['isMe'] == true,
+  );
 
   final int protectorId;
   final String name;
@@ -600,21 +618,21 @@ class DeviceSettings {
   });
 
   factory DeviceSettings.fromJson(Map<String, dynamic> json) => DeviceSettings(
-        deviceId: json['deviceId'] as int,
-        name: json['name'] as String,
-        connected: json['connected'] == true,
-        batteryLevel: json['batteryLevel'] as int,
-        batteryHoursLeft: json['batteryHoursLeft'] as int,
-        volume: json['volume'] as int,
-        medicationCheck: json['medicationCheck'] == true,
-        defaultVoiceId: json['defaultVoiceId'] as int?,
-        voices: (json['voices'] as List)
-            .map((e) => DeviceVoice.fromJson(e as Map<String, dynamic>))
-            .toList(),
-        pairedAt: json['pairedAt'] == null
-            ? null
-            : DateTime.parse(json['pairedAt'] as String),
-      );
+    deviceId: json['deviceId'] as int,
+    name: json['name'] as String,
+    connected: json['connected'] == true,
+    batteryLevel: json['batteryLevel'] as int,
+    batteryHoursLeft: json['batteryHoursLeft'] as int,
+    volume: json['volume'] as int,
+    medicationCheck: json['medicationCheck'] == true,
+    defaultVoiceId: json['defaultVoiceId'] as int?,
+    voices: (json['voices'] as List)
+        .map((e) => DeviceVoice.fromJson(e as Map<String, dynamic>))
+        .toList(),
+    pairedAt: json['pairedAt'] == null
+        ? null
+        : DateTime.parse(json['pairedAt'] as String),
+  );
 
   final int deviceId;
   final String name;
@@ -628,11 +646,11 @@ class DeviceSettings {
   final DateTime? pairedAt;
 
   String get volumeText => switch (volume) {
-        <= 40 => '작게',
-        <= 65 => '보통',
-        <= 85 => '크게',
-        _ => '아주 크게',
-      };
+    <= 40 => '작게',
+    <= 65 => '보통',
+    <= 85 => '크게',
+    _ => '아주 크게',
+  };
 }
 
 class DeviceVoice {
@@ -645,12 +663,12 @@ class DeviceVoice {
   });
 
   factory DeviceVoice.fromJson(Map<String, dynamic> json) => DeviceVoice(
-        voiceId: json['voiceId'] as int,
-        name: json['name'] as String,
-        status: json['status'] as String,
-        progress: json['progress'] as int? ?? 0,
-        isDefault: json['isDefault'] == true,
-      );
+    voiceId: json['voiceId'] as int,
+    name: json['name'] as String,
+    status: json['status'] as String,
+    progress: json['progress'] as int? ?? 0,
+    isDefault: json['isDefault'] == true,
+  );
 
   final int voiceId;
   final String name;
@@ -662,10 +680,10 @@ class DeviceVoice {
   bool get isReady => status == 'ready';
 
   String get statusText => switch (status) {
-        'ready' => '등록 완료',
-        'training' => '학습 중...',
-        _ => '학습 실패',
-      };
+    'ready' => '등록 완료',
+    'training' => '학습 중...',
+    _ => '학습 실패',
+  };
 }
 
 class DndSettings {
@@ -678,12 +696,12 @@ class DndSettings {
   });
 
   factory DndSettings.fromJson(Map<String, dynamic> json) => DndSettings(
-        enabled: json['enabled'] == true,
-        startHour: json['startHour'] as int,
-        endHour: json['endHour'] as int,
-        allowUrgentAlert: json['allowUrgentAlert'] == true,
-        allowWakeWord: json['allowWakeWord'] == true,
-      );
+    enabled: json['enabled'] == true,
+    startHour: json['startHour'] as int,
+    endHour: json['endHour'] as int,
+    allowUrgentAlert: json['allowUrgentAlert'] == true,
+    allowWakeWord: json['allowWakeWord'] == true,
+  );
 
   final bool enabled;
   final int startHour;
@@ -696,11 +714,11 @@ class MedicationList {
   MedicationList({required this.medicationCheck, required this.items});
 
   factory MedicationList.fromJson(Map<String, dynamic> json) => MedicationList(
-        medicationCheck: json['medicationCheck'] == true,
-        items: (json['medications'] as List)
-            .map((e) => Medication.fromJson(e as Map<String, dynamic>))
-            .toList(),
-      );
+    medicationCheck: json['medicationCheck'] == true,
+    items: (json['medications'] as List)
+        .map((e) => Medication.fromJson(e as Map<String, dynamic>))
+        .toList(),
+  );
 
   final bool medicationCheck;
   final List<Medication> items;
@@ -716,12 +734,12 @@ class Medication {
   });
 
   factory Medication.fromJson(Map<String, dynamic> json) => Medication(
-        medicationId: json['medicationId'] as int,
-        name: json['name'] as String,
-        time: json['time'] as String,
-        timing: json['timing'] as String,
-        enabled: json['enabled'] == true,
-      );
+    medicationId: json['medicationId'] as int,
+    name: json['name'] as String,
+    time: json['time'] as String,
+    timing: json['timing'] as String,
+    enabled: json['enabled'] == true,
+  );
 
   final int medicationId;
   final String name;
@@ -734,9 +752,9 @@ class ServiceInfo {
   ServiceInfo({required this.appName, required this.version});
 
   factory ServiceInfo.fromJson(Map<String, dynamic> json) => ServiceInfo(
-        appName: json['appName'] as String? ?? 'ReMory',
-        version: json['version'] as String? ?? '-',
-      );
+    appName: json['appName'] as String? ?? 'ReMory',
+    version: json['version'] as String? ?? '-',
+  );
 
   final String appName;
   final String version;

@@ -17,9 +17,7 @@ class SignupMethodScreen extends StatelessWidget {
   void _openRegistration(BuildContext context) {
     Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (_) => const FirstRegistrationFlow(),
-      ),
+      MaterialPageRoute(builder: (_) => const FirstRegistrationFlow()),
     );
   }
 
@@ -68,7 +66,7 @@ class SignupMethodScreen extends StatelessWidget {
                     iconColor: Colors.white,
                     iconBackground: _brown,
                     title: '처음 시작해요',
-                    description: '보호자 + 어머님 정보 등록 후\n가족을 초대해요',
+                    description: '보호자 + 인형 사용자 정보 등록 후\n가족을 초대해요',
                     onTap: () => _openRegistration(context),
                   ),
                   SizedBox(height: 12.h),
