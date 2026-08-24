@@ -279,6 +279,77 @@ class SettingsApi {
   /// 개발용: 어르신·인형 샘플 데이터를 만든다(백엔드 DEBUG=true 일 때만).
   /// 첫 등록/초대 코드 플로우가 붙으면 지워도 된다.
   Future<void> seedDemoData() async => _send('POST', '/dev/seed');
+
+  // ── 목소리 등록(보이스 클로닝) ─────────────────────
+  /// 녹음 파일을 올려 목소리 학습을 시작한다.
+  /// 반환된 voiceId 로 [voiceStatus] 를 폴링해 ready/failed 를 확인한다.
+  Future<DeviceVoice> registerVoice(
+    int deviceId, {
+    required String name,
+    required String filePath,
+  }) async {
+    final d = await _sendMultipart(
+      '/devices/$deviceId/voices',
+      field: 'file',
+      filePath: filePath,
+      fields: {'name': name},
+    );
+    return DeviceVoice.fromJson(d as Map<String, dynamic>);
+  }
+
+  /// 목소리 학습 상태 조회(폴링용). training → ready | failed.
+  Future<VoiceStatus> voiceStatus(int voiceId) async =>
+      VoiceStatus.fromJson(await _get('/voices/$voiceId/status'));
+
+  /// multipart 파일 업로드용 전송. JSON 전용인 [_send] 와 달리 파일을 실어 보낸다.
+  /// access 토큰 만료(401)면 한 번 재발급 후 재시도한다(요청을 새로 만들어 파일을 다시 읽음).
+  Future<dynamic> _sendMultipart(
+    String path, {
+    required String field,
+    required String filePath,
+    Map<String, String>? fields,
+    bool allowRetry = true,
+  }) async {
+    final token = await SessionStore.accessToken();
+    if (token == null || token.isEmpty) {
+      throw ApiException('로그인이 필요합니다.', 401);
+    }
+
+    final request = http.MultipartRequest('POST', Uri.parse('$baseUrl$path'))
+      ..headers['Authorization'] = 'Bearer $token';
+    if (fields != null) request.fields.addAll(fields);
+    request.files.add(await http.MultipartFile.fromPath(field, filePath));
+
+    final streamed = await _client.send(request);
+    final res = await http.Response.fromStream(streamed);
+
+    if (res.statusCode == 401 && allowRetry && await _refreshSession()) {
+      return _sendMultipart(
+        path,
+        field: field,
+        filePath: filePath,
+        fields: fields,
+        allowRetry: false,
+      );
+    }
+
+    Map<String, dynamic> decoded;
+    try {
+      decoded = jsonDecode(res.body) as Map<String, dynamic>;
+    } catch (_) {
+      throw ApiException(
+        '서버 응답을 읽을 수 없습니다. (${res.statusCode})',
+        res.statusCode,
+      );
+    }
+    if (res.statusCode >= 400) {
+      throw ApiException(
+        (decoded['message'] as String?) ?? '요청에 실패했어요. (${res.statusCode})',
+        res.statusCode,
+      );
+    }
+    return decoded['data'];
+  }
 }
 
 dynamic _mockSettingsResponse(
@@ -684,6 +755,35 @@ class DeviceVoice {
     'training' => '학습 중...',
     _ => '학습 실패',
   };
+}
+
+/// 목소리 학습 상태 폴링 응답(GET /voices/{id}/status).
+class VoiceStatus {
+  VoiceStatus({
+    required this.voiceId,
+    required this.status,
+    required this.progress,
+    required this.speakerId,
+    required this.errorMessage,
+  });
+
+  factory VoiceStatus.fromJson(Map<String, dynamic> json) => VoiceStatus(
+    voiceId: json['voiceId'] as int,
+    status: json['status'] as String,
+    progress: json['progress'] as int? ?? 0,
+    speakerId: json['speakerId'] as String?,
+    errorMessage: json['errorMessage'] as String?,
+  );
+
+  final int voiceId;
+  final String status; // training | ready | failed
+  final int progress;
+  final String? speakerId; // ready 면 채워짐
+  final String? errorMessage; // failed 면 사유
+
+  bool get isReady => status == 'ready';
+  bool get isFailed => status == 'failed';
+  bool get isTraining => status == 'training';
 }
 
 class DndSettings {
