@@ -5,6 +5,7 @@
 // access 토큰(기본 30분)이 만료되면 refresh 토큰으로 한 번 재발급 후 재시도한다.
 
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
@@ -297,6 +298,22 @@ class SettingsApi {
     return DeviceVoice.fromJson(d as Map<String, dynamic>);
   }
 
+  /// 웹과 모바일에서 녹음 스트림 바이트를 바로 업로드한다.
+  Future<DeviceVoice> registerVoiceBytes(
+    int deviceId, {
+    required String name,
+    required Uint8List bytes,
+  }) async {
+    final d = await _sendMultipartBytes(
+      '/devices/$deviceId/voices',
+      field: 'file',
+      bytes: bytes,
+      filename: 'voice_${DateTime.now().millisecondsSinceEpoch}.wav',
+      fields: {'name': name},
+    );
+    return DeviceVoice.fromJson(d as Map<String, dynamic>);
+  }
+
   /// 목소리 학습 상태 조회(폴링용). training → ready | failed.
   Future<VoiceStatus> voiceStatus(int voiceId) async =>
       VoiceStatus.fromJson(await _get('/voices/$voiceId/status'));
@@ -328,6 +345,57 @@ class SettingsApi {
         path,
         field: field,
         filePath: filePath,
+        fields: fields,
+        allowRetry: false,
+      );
+    }
+
+    Map<String, dynamic> decoded;
+    try {
+      decoded = jsonDecode(res.body) as Map<String, dynamic>;
+    } catch (_) {
+      throw ApiException(
+        '서버 응답을 읽을 수 없습니다. (${res.statusCode})',
+        res.statusCode,
+      );
+    }
+    if (res.statusCode >= 400) {
+      throw ApiException(
+        (decoded['message'] as String?) ?? '요청에 실패했어요. (${res.statusCode})',
+        res.statusCode,
+      );
+    }
+    return decoded['data'];
+  }
+
+  Future<dynamic> _sendMultipartBytes(
+    String path, {
+    required String field,
+    required Uint8List bytes,
+    required String filename,
+    Map<String, String>? fields,
+    bool allowRetry = true,
+  }) async {
+    final token = await SessionStore.accessToken();
+    if (token == null || token.isEmpty) {
+      throw ApiException('로그인이 필요합니다.', 401);
+    }
+
+    final request = http.MultipartRequest('POST', Uri.parse('$baseUrl$path'))
+      ..headers['Authorization'] = 'Bearer $token';
+    if (fields != null) request.fields.addAll(fields);
+    request.files.add(
+      http.MultipartFile.fromBytes(field, bytes, filename: filename),
+    );
+
+    final streamed = await _client.send(request);
+    final res = await http.Response.fromStream(streamed);
+    if (res.statusCode == 401 && allowRetry && await _refreshSession()) {
+      return _sendMultipartBytes(
+        path,
+        field: field,
+        bytes: bytes,
+        filename: filename,
         fields: fields,
         allowRetry: false,
       );

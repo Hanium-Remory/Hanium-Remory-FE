@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:record/record.dart';
 
 import '../4. home/home_and_alert_center.dart';
 import '../services/settings_api.dart';
@@ -28,7 +30,7 @@ class _VoiceRecordFlowState extends State<VoiceRecordFlow> {
 
   // 실제 녹음(record 패키지)이 붙으면 이 경로가 채워진다. 지금은 항상 null 이라
   // 서버 업로드를 건너뛴다. 경로만 들어오면 아래 업로드→폴링이 그대로 동작한다.
-  String? _recordedPath;
+  Uint8List? _recordedAudio;
   int? _voiceId;
   bool _busy = false;
   // 학습 상태: idle | training | ready | failed | timeout
@@ -64,10 +66,10 @@ class _VoiceRecordFlowState extends State<VoiceRecordFlow> {
     });
   }
 
-  void _finishRecording(int seconds, [String? path]) {
+  void _finishRecording(int seconds, Uint8List audio) {
     setState(() {
       _recordedSeconds = seconds;
-      _recordedPath = path;
+      _recordedAudio = audio;
       _step = 2;
     });
   }
@@ -75,10 +77,11 @@ class _VoiceRecordFlowState extends State<VoiceRecordFlow> {
   // 확인 화면 '완료' → 녹음 파일을 백엔드에 업로드하고 학습 상태를 폴링한다.
   Future<void> _uploadAndPoll() async {
     if (_busy) return;
-    final path = _recordedPath;
-    if (path == null) {
-      // 아직 실제 녹음(record 패키지)이 안 붙어 올릴 파일이 없다 → 완료 화면만 보여준다.
-      _next();
+    final audio = _recordedAudio;
+    if (audio == null || audio.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('녹음 파일이 없어요. 다시 녹음해 주세요.')));
       return;
     }
     setState(() => _busy = true);
@@ -93,10 +96,10 @@ class _VoiceRecordFlowState extends State<VoiceRecordFlow> {
         );
         return;
       }
-      final voice = await _api.registerVoice(
+      final voice = await _api.registerVoiceBytes(
         deviceId,
         name: '가족 음성',
-        filePath: path,
+        bytes: audio,
       );
       if (!mounted) return;
       _voiceId = voice.voiceId;
@@ -300,7 +303,7 @@ class VoiceRecordingScreen extends StatefulWidget {
   });
 
   final VoidCallback onBack;
-  final ValueChanged<int> onDone;
+  final void Function(int seconds, Uint8List audio) onDone;
   final int scriptIndex;
 
   @override
@@ -308,9 +311,16 @@ class VoiceRecordingScreen extends StatefulWidget {
 }
 
 class _VoiceRecordingScreenState extends State<VoiceRecordingScreen> {
-  late Timer _timer;
+  final AudioRecorder _recorder = AudioRecorder();
+  final BytesBuilder _audioBytes = BytesBuilder(copy: false);
+  StreamSubscription<Uint8List>? _audioSubscription;
+  Completer<void>? _audioDone;
+  Timer? _timer;
   int _seconds = 0;
   int _scriptIndex = 0;
+  bool _isRecording = false;
+  bool _isStopping = false;
+  String? _recordingError;
 
   static const _scripts = [
     '엄마, 저예요. 오늘은 어떻게 보내셨어요? 점심은 뭐 드셨고요? 따뜻하게 드셔야 해요. 어제 보내드린 영양제는 잘 챙겨 드시고 계시죠? 잊지 마시고요. 저는 오늘 회사에서 회의가 많아서 좀 정신이 없었어요. 점심엔 김치찌개를 먹었는데, 엄마가 끓여주시던 그 맛이 자꾸 생각나더라고요. 다음 주말에 가면 손주도 데려갈게요. 사랑해요, 엄마.',
@@ -324,16 +334,86 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen> {
   @override
   void initState() {
     super.initState();
-    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (!mounted) return;
-      setState(() => _seconds++);
-    });
+    _startRecording();
   }
 
   @override
   void dispose() {
-    _timer.cancel();
+    _timer?.cancel();
+    _audioSubscription?.cancel();
+    if (_isRecording) unawaited(_recorder.cancel());
+    unawaited(_recorder.dispose());
     super.dispose();
+  }
+
+  Future<void> _startRecording() async {
+    try {
+      final allowed = await _recorder.hasPermission();
+      if (!allowed) {
+        if (mounted) setState(() => _recordingError = '마이크 권한이 필요합니다.');
+        return;
+      }
+
+      final stream = await _recorder.startStream(
+        const RecordConfig(
+          encoder: AudioEncoder.wav,
+          sampleRate: 44100,
+          numChannels: 1,
+        ),
+      );
+      _audioDone = Completer<void>();
+      _audioSubscription = stream.listen(
+        _audioBytes.add,
+        onError: (Object error) {
+          if (!(_audioDone?.isCompleted ?? true)) _audioDone!.complete();
+          if (mounted) setState(() => _recordingError = '녹음 중 오류가 발생했습니다.');
+        },
+        onDone: () {
+          if (!(_audioDone?.isCompleted ?? true)) _audioDone!.complete();
+        },
+      );
+      if (!mounted) return;
+      setState(() => _isRecording = true);
+      _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (!mounted) return;
+        setState(() => _seconds++);
+        if (_seconds >= 300) _stopRecording();
+      });
+    } catch (error) {
+      if (mounted) setState(() => _recordingError = '마이크를 시작할 수 없습니다: $error');
+    }
+  }
+
+  Future<void> _stopRecording() async {
+    if (!_isRecording || _isStopping) return;
+    setState(() => _isStopping = true);
+    _timer?.cancel();
+    try {
+      await _recorder.stop();
+      await _audioDone?.future.timeout(
+        const Duration(seconds: 2),
+        onTimeout: () {},
+      );
+      await _audioSubscription?.cancel();
+      final audio = _audioBytes.takeBytes();
+      if (!mounted) return;
+      if (audio.isEmpty) {
+        setState(() {
+          _isStopping = false;
+          _recordingError = '녹음된 소리가 없어요. 다시 시도해 주세요.';
+        });
+        return;
+      }
+      _isRecording = false;
+      widget.onDone(_seconds, audio);
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _isStopping = false;
+          _recordingError = '녹음을 저장하지 못했습니다: $error';
+        });
+      }
+    }
   }
 
   @override
@@ -440,16 +520,29 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen> {
                 ),
               ),
               SizedBox(height: 12.h),
+              if (_recordingError != null) ...[
+                Text(
+                  _recordingError!,
+                  style: TextStyle(
+                    color: Colors.red.shade700,
+                    fontSize: 11.sp,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                SizedBox(height: 8.h),
+              ],
               Row(
                 children: [
-                  Expanded(child: _Waveform(active: true)),
+                  Expanded(child: _Waveform(active: _isRecording)),
                   SizedBox(width: 10.w),
                   SizedBox(
                     height: 54.h,
                     child: ElevatedButton.icon(
-                      onPressed: () => widget.onDone(_seconds),
+                      onPressed: _isRecording && !_isStopping
+                          ? _stopRecording
+                          : null,
                       icon: Icon(Icons.stop, size: 13.sp),
-                      label: const Text('끝내기'),
+                      label: Text(_isStopping ? '저장 중' : '끝내기'),
                       style: ElevatedButton.styleFrom(
                         elevation: 0,
                         backgroundColor: const Color(0xFFE8DCCF),
