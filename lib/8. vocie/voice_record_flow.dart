@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import '../4. home/home_and_alert_center.dart';
+import '../services/settings_api.dart';
 
 const Color _bg = Color(0xFFFBF6EE);
 const Color _brown = Color(0xFF936249);
@@ -20,8 +21,26 @@ class VoiceRecordFlow extends StatefulWidget {
 }
 
 class _VoiceRecordFlowState extends State<VoiceRecordFlow> {
+  final SettingsApi _api = SettingsApi();
+
   int _step = 0;
   int _recordedSeconds = 0;
+
+  // 실제 녹음(record 패키지)이 붙으면 이 경로가 채워진다. 지금은 항상 null 이라
+  // 서버 업로드를 건너뛴다. 경로만 들어오면 아래 업로드→폴링이 그대로 동작한다.
+  String? _recordedPath;
+  int? _voiceId;
+  bool _busy = false;
+  // 학습 상태: idle | training | ready | failed | timeout
+  String _enroll = 'idle';
+  String? _enrollError;
+  Timer? _poll;
+
+  @override
+  void dispose() {
+    _poll?.cancel();
+    super.dispose();
+  }
 
   void _next() {
     if (_step < 3) {
@@ -36,13 +55,103 @@ class _VoiceRecordFlowState extends State<VoiceRecordFlow> {
   }
 
   void _restartRecording() {
-    setState(() => _step = 1);
+    _poll?.cancel();
+    setState(() {
+      _step = 1;
+      _enroll = 'idle';
+      _enrollError = null;
+      _voiceId = null;
+    });
   }
 
-  void _finishRecording(int seconds) {
+  void _finishRecording(int seconds, [String? path]) {
     setState(() {
       _recordedSeconds = seconds;
+      _recordedPath = path;
       _step = 2;
+    });
+  }
+
+  // 확인 화면 '완료' → 녹음 파일을 백엔드에 업로드하고 학습 상태를 폴링한다.
+  Future<void> _uploadAndPoll() async {
+    if (_busy) return;
+    final path = _recordedPath;
+    if (path == null) {
+      // 아직 실제 녹음(record 패키지)이 안 붙어 올릴 파일이 없다 → 완료 화면만 보여준다.
+      _next();
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      // 내 계정에 실제로 연결된 인형을 조회한다(deviceId 하드코딩 대신).
+      final profile = await _api.myProfile();
+      final deviceId = profile.mainUser?.deviceId;
+      if (deviceId == null) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('연결된 인형이 없어요. 인형을 먼저 등록해 주세요.')),
+        );
+        return;
+      }
+      final voice = await _api.registerVoice(
+        deviceId,
+        name: '가족 음성',
+        filePath: path,
+      );
+      if (!mounted) return;
+      _voiceId = voice.voiceId;
+      setState(() => _enroll = 'training');
+      _next(); // 완료(학습 중) 화면으로
+      _startPolling();
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('음성 등록 실패: ${e.message}')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('음성 등록 실패: $e')));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  // 학습 상태를 5초마다 조회. ready/failed 면 멈추고, 10분이면 타임아웃 처리.
+  void _startPolling() {
+    _poll?.cancel();
+    final started = DateTime.now();
+    _poll = Timer.periodic(const Duration(seconds: 5), (t) async {
+      final id = _voiceId;
+      if (id == null) {
+        t.cancel();
+        return;
+      }
+      if (DateTime.now().difference(started) > const Duration(minutes: 10)) {
+        t.cancel();
+        if (mounted) setState(() => _enroll = 'timeout');
+        return;
+      }
+      try {
+        final s = await _api.voiceStatus(id);
+        if (!mounted) {
+          t.cancel();
+          return;
+        }
+        if (s.isReady) {
+          t.cancel();
+          setState(() => _enroll = 'ready');
+        } else if (s.isFailed) {
+          t.cancel();
+          setState(() {
+            _enroll = 'failed';
+            _enrollError = s.errorMessage;
+          });
+        }
+      } catch (_) {
+        // 일시적 네트워크 오류는 다음 주기에 재시도.
+      }
     });
   }
 
@@ -65,10 +174,16 @@ class _VoiceRecordFlowState extends State<VoiceRecordFlow> {
       VoiceCheckScreen(
         onBack: _back,
         onRetry: _restartRecording,
-        onComplete: _next,
+        onComplete: _uploadAndPoll,
         durationSeconds: _recordedSeconds,
       ),
-      VoiceCompleteScreen(onBack: _back, onConfirm: _goHome),
+      VoiceCompleteScreen(
+        onBack: _back,
+        onConfirm: _goHome,
+        status: _enroll,
+        errorMessage: _enrollError,
+        onRetry: _restartRecording,
+      ),
     ];
 
     return AnimatedSwitcher(
@@ -503,13 +618,49 @@ class VoiceCompleteScreen extends StatelessWidget {
     super.key,
     required this.onBack,
     required this.onConfirm,
+    this.status = 'idle',
+    this.errorMessage,
+    this.onRetry,
   });
 
   final VoidCallback onBack;
   final VoidCallback onConfirm;
 
+  /// 학습 상태: idle | training | ready | failed | timeout
+  final String status;
+  final String? errorMessage;
+  final VoidCallback? onRetry;
+
   @override
   Widget build(BuildContext context) {
+    final failed = status == 'failed';
+    final ready = status == 'ready';
+    final timeout = status == 'timeout';
+
+    final title = failed
+        ? '학습에 실패했어요'
+        : ready
+        ? '학습이 끝났어요'
+        : '잘 보냈어요';
+
+    final body = failed
+        ? (errorMessage != null && errorMessage!.isNotEmpty
+              ? errorMessage!
+              : '다시 한 번 녹음해 주세요.')
+        : ready
+        ? '이제 인형이 이 목소리로 이야기해요.'
+        : timeout
+        ? '학습이 아직 진행 중이에요.\n조금 뒤 인형 앱에서 확인해 주세요.'
+        : '내 목소리를 인형이 학습하는 데 몇 분 정도가 걸려요.\n다 끝나면 인형 앱으로 알려드릴게요.';
+
+    final chip = failed
+        ? '다시 녹음이 필요해요'
+        : ready
+        ? '내 목소리 준비 완료'
+        : timeout
+        ? '학습이 진행 중이에요'
+        : '이제 내 목소리를 배우는 중이에요';
+
     return Scaffold(
       backgroundColor: _bg,
       body: SafeArea(
@@ -524,7 +675,8 @@ class VoiceCompleteScreen extends StatelessWidget {
               SizedBox(height: 34.h),
               Center(
                 child: Text(
-                  '잘 보냈어요',
+                  title,
+                  textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 24.sp,
                     fontWeight: FontWeight.w900,
@@ -534,11 +686,7 @@ class VoiceCompleteScreen extends StatelessWidget {
               ),
               SizedBox(height: 20.h),
               Center(
-                child: Text(
-                  '내 목소리를 인형이 학습하는 데 몇 분 정도가 걸려요.\n다 끝나면 인형 앱으로 알려드릴게요.',
-                  textAlign: TextAlign.center,
-                  style: _body(),
-                ),
+                child: Text(body, textAlign: TextAlign.center, style: _body()),
               ),
               SizedBox(height: 18.h),
               Center(
@@ -552,14 +700,19 @@ class VoiceCompleteScreen extends StatelessWidget {
                     borderRadius: BorderRadius.circular(99.r),
                     border: Border.all(color: _line),
                   ),
-                  child: Text(
-                    '이제 내 목소리를 배우는 중이에요',
-                    style: _tiny(color: _brown),
-                  ),
+                  child: Text(chip, style: _tiny(color: _brown)),
                 ),
               ),
               const Spacer(),
-              _BottomButton(text: '알겠어요', onTap: onConfirm),
+              if (failed && onRetry != null) ...[
+                _BottomButton(text: '다시 녹음하기', onTap: onRetry!),
+                SizedBox(height: 10.h),
+                TextButton(
+                  onPressed: onConfirm,
+                  child: Text('나중에 할게요', style: _tiny(color: _muted)),
+                ),
+              ] else
+                _BottomButton(text: '알겠어요', onTap: onConfirm),
               SizedBox(height: 22.h),
               const _HomeIndicator(),
             ],
