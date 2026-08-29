@@ -933,6 +933,7 @@ class AppNotification {
 class DailyReportData {
   DailyReportData({
     required this.reportId,
+    this.reportDate,
     required this.conversationCount,
     required this.familyInteractionCount,
     this.emotionSummary,
@@ -942,6 +943,9 @@ class DailyReportData {
 
   factory DailyReportData.fromJson(Map<String, dynamic> json) => DailyReportData(
     reportId: json['reportId'] as int,
+    reportDate: json['reportDate'] == null
+        ? null
+        : DateTime.parse(json['reportDate'] as String),
     conversationCount: (json['conversationCount'] as int?) ?? 0,
     familyInteractionCount: (json['familyInteractionCount'] as int?) ?? 0,
     emotionSummary: json['emotionSummary'] as String?,
@@ -950,6 +954,10 @@ class DailyReportData {
   );
 
   final int reportId;
+
+  /// 어느 날의 요약인지. 만들어진 시각(createdAt)과 다르다 —
+  /// 배치가 자정 넘어 전날 것을 만들기 때문이다.
+  final DateTime? reportDate;
   final int conversationCount;
   final int familyInteractionCount;
   final String? emotionSummary;

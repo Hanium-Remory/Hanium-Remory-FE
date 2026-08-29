@@ -102,7 +102,8 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
       child: Column(
         children: [
           SizedBox(height: 12.h),
-          _Header(name: _name, at: report?.createdAt),
+          // 만들어진 시각이 아니라 '어느 날의 요약인지' 를 보여준다.
+          _Header(name: _name, at: report?.reportDate ?? report?.createdAt),
           SizedBox(height: 10.h),
           Expanded(
             child: report == null
