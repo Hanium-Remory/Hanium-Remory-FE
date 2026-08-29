@@ -430,7 +430,7 @@ class SettingsApi {
       '/users',
       body: {
         'name': name,
-        if (gender != null) 'gender': gender,
+        'gender': ?gender,
         if (birthDate != null)
           'birthDate':
               '${birthDate.year.toString().padLeft(4, '0')}-'
