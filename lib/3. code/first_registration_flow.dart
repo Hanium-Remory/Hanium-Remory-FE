@@ -5,6 +5,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import '../4. home/home_and_alert_center.dart';
 import '../services/auth_api.dart';
 import '../services/session_store.dart';
+import '../services/settings_api.dart';
 
 const Color _bg = Color(0xFFFBF6EE);
 const Color _brown = Color(0xFF936249);
@@ -25,9 +26,13 @@ class FirstRegistrationFlow extends StatefulWidget {
 
 class _FirstRegistrationFlowState extends State<FirstRegistrationFlow> {
   int _page = 0;
-  final _inviteCode = '7M92A4';
+
+  /// 어르신을 등록하고 초대 코드를 받으면 채워진다.
+  String? _inviteCode;
+  String _myName = '';
 
   final _api = AuthApi();
+  final _settings = SettingsApi();
   bool _busy = false;
   String _busyMsg = '';
   String? _onboardingToken; // Face ID 등록 후 발급, 번호 연결에 사용
@@ -88,6 +93,36 @@ class _FirstRegistrationFlowState extends State<FirstRegistrationFlow> {
       _setBusy(false);
       _snack('Face ID 등록 실패: $e');
     }
+  }
+
+  /// 3단계: 어르신을 등록하고, 가족에게 줄 초대 코드를 미리 받아 둔다.
+  /// 코드 발급이 실패해도 가입은 끝난 것이라 다음 화면으로 넘어간다.
+  Future<void> _onPatientNext({
+    required String name,
+    required String gender,
+    required DateTime birthDate,
+  }) async {
+    try {
+      final user = await _settings.createUser(
+        name: name,
+        gender: gender,
+        birthDate: birthDate,
+      );
+      final invite = await _settings.createInviteCode(user.userId);
+      final profile = await _settings.myProfile();
+      if (!mounted) return;
+      setState(() {
+        _inviteCode = invite.inviteCode;
+        _myName = profile.name;
+      });
+    } on ApiException catch (e) {
+      _snack(e.message);
+      return;
+    } catch (_) {
+      _snack('어르신 정보를 저장하지 못했어요.');
+      return;
+    }
+    _next();
   }
 
   /// 2단계: 보호자 정보(전화번호) → 인증번호 발송·확인 → 패스키 계정에 번호 연결.
@@ -191,10 +226,11 @@ class _FirstRegistrationFlowState extends State<FirstRegistrationFlow> {
     final pages = [
       _FaceSignupPage(onNext: _onFaceIdStart),
       _GuardianInfoPage(onBack: _back, onNext: _onGuardianNext),
-      _PatientInfoPage(onBack: _back, onNext: _next),
+      _PatientInfoPage(onBack: _back, onNext: _onPatientNext),
       _FamilyConnectPage(onBack: _back, onNext: _next),
       _InviteCodeCreatePage(
         code: _inviteCode,
+        myName: _myName,
         onBack: _back,
         onNext: _goToHome,
       ),
@@ -401,19 +437,61 @@ class _GuardianInfoPageState extends State<_GuardianInfoPage> {
   }
 }
 
+/// 어르신 정보 페이지가 모아서 넘겨주는 값.
+typedef ElderSubmit =
+    Future<void> Function({
+      required String name,
+      required String gender,
+      required DateTime birthDate,
+    });
+
 class _PatientInfoPage extends StatefulWidget {
   const _PatientInfoPage({required this.onBack, required this.onNext});
 
   final VoidCallback onBack;
-  final VoidCallback onNext;
+  final ElderSubmit onNext;
 
   @override
   State<_PatientInfoPage> createState() => _PatientInfoPageState();
 }
 
 class _PatientInfoPageState extends State<_PatientInfoPage> {
+  static const int _firstYear = 1935;
+
   final _nameController = TextEditingController();
   String _selectedGender = '여성';
+
+  // 휠의 initialIndex 와 맞춰 둔다(1952년 3월 15일).
+  int _yearIndex = 17;
+  int _monthIndex = 2;
+  int _dayIndex = 14;
+  bool _busy = false;
+
+  Future<void> _submit() async {
+    if (_busy) return;
+    FocusManager.instance.primaryFocus?.unfocus();
+    final name = _nameController.text.trim();
+    if (name.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('이름을 입력해 주세요.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      await widget.onNext(
+        name: name,
+        gender: _selectedGender == '남성' ? 'male' : 'female',
+        // 2월 30일처럼 없는 날짜를 고르면 그 달의 마지막 날로 맞춰진다.
+        birthDate: DateTime(_firstYear + _yearIndex, _monthIndex + 1, _dayIndex + 1),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
 
   @override
   void dispose() {
@@ -471,22 +549,31 @@ class _PatientInfoPageState extends State<_PatientInfoPage> {
             child: Row(
               children: [
                 _ScrollDateColumn(
-                  values: List.generate(90, (index) => '${1935 + index}년'),
-                  initialIndex: 17,
+                  values: List.generate(
+                    90,
+                    (index) => '${_firstYear + index}년',
+                  ),
+                  initialIndex: _yearIndex,
+                  onChanged: (index) => _yearIndex = index,
                 ),
                 _ScrollDateColumn(
                   values: List.generate(12, (index) => '${index + 1}월'),
-                  initialIndex: 2,
+                  initialIndex: _monthIndex,
+                  onChanged: (index) => _monthIndex = index,
                 ),
                 _ScrollDateColumn(
                   values: List.generate(31, (index) => '${index + 1}일'),
-                  initialIndex: 14,
+                  initialIndex: _dayIndex,
+                  onChanged: (index) => _dayIndex = index,
                 ),
               ],
             ),
           ),
           const Spacer(),
-          _BottomButton(text: '다음으로', onTap: widget.onNext),
+          _BottomButton(
+            text: _busy ? '등록 중…' : '다음으로',
+            onTap: _busy ? null : _submit,
+          ),
           SizedBox(height: 18.h),
         ],
       ),
@@ -544,11 +631,16 @@ class _FamilyConnectPage extends StatelessWidget {
 class _InviteCodeCreatePage extends StatefulWidget {
   const _InviteCodeCreatePage({
     required this.code,
+    required this.myName,
     required this.onBack,
     required this.onNext,
   });
 
-  final String code;
+  /// 아직 못 받았으면 null.
+  final String? code;
+
+  /// 코드를 만든 사람(나) 이름.
+  final String myName;
   final VoidCallback onBack;
   final VoidCallback onNext;
 
@@ -560,7 +652,9 @@ class _InviteCodeCreatePageState extends State<_InviteCodeCreatePage> {
   bool _copied = false;
 
   Future<void> _copyCode() async {
-    await Clipboard.setData(ClipboardData(text: widget.code));
+    final code = widget.code;
+    if (code == null) return;
+    await Clipboard.setData(ClipboardData(text: code));
     if (!mounted) return;
     setState(() => _copied = true);
   }
@@ -596,7 +690,7 @@ class _InviteCodeCreatePageState extends State<_InviteCodeCreatePage> {
                     radius: 26.r,
                     backgroundColor: const Color(0xFFD9EAF4),
                     child: Text(
-                      '이슬',
+                      widget.myName.isEmpty ? '나' : widget.myName,
                       style: TextStyle(
                         color: const Color(0xFF3C7894),
                         fontSize: 12.sp,
@@ -608,7 +702,7 @@ class _InviteCodeCreatePageState extends State<_InviteCodeCreatePage> {
                   GestureDetector(
                     onTap: _copyCode,
                     child: Text(
-                      widget.code,
+                      widget.code ?? '------',
                       style: TextStyle(
                         fontSize: 30.sp,
                         fontWeight: FontWeight.w900,
@@ -811,10 +905,17 @@ class _WideChoice extends StatelessWidget {
 }
 
 class _ScrollDateColumn extends StatefulWidget {
-  const _ScrollDateColumn({required this.values, required this.initialIndex});
+  const _ScrollDateColumn({
+    required this.values,
+    required this.initialIndex,
+    this.onChanged,
+  });
 
   final List<String> values;
   final int initialIndex;
+
+  /// 고른 값의 인덱스. 생년월일을 서버로 보내려면 바깥에서 알아야 한다.
+  final ValueChanged<int>? onChanged;
 
   @override
   State<_ScrollDateColumn> createState() => _ScrollDateColumnState();
@@ -889,6 +990,7 @@ class _ScrollDateColumnState extends State<_ScrollDateColumn> {
                 physics: const FixedExtentScrollPhysics(),
                 onSelectedItemChanged: (index) {
                   setState(() => _selectedIndex = index);
+                  widget.onChanged?.call(index);
                 },
                 childDelegate: ListWheelChildBuilderDelegate(
                   childCount: widget.values.length,

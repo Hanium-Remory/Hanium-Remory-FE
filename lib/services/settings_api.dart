@@ -417,6 +417,43 @@ class SettingsApi {
     return DailyReportData.fromJson(d as Map<String, dynamic>);
   }
 
+  // ── 어르신 등록 ────────────────────────────────────
+  /// 어르신을 만들고 나를 주보호자로 연결한다.
+  /// 이미 연결된 어르신이 있으면 서버가 400 으로 막는다.
+  Future<ElderUser> createUser({
+    required String name,
+    String? gender,
+    DateTime? birthDate,
+  }) async {
+    final d = await _send(
+      'POST',
+      '/users',
+      body: {
+        'name': name,
+        if (gender != null) 'gender': gender,
+        if (birthDate != null)
+          'birthDate':
+              '${birthDate.year.toString().padLeft(4, '0')}-'
+              '${birthDate.month.toString().padLeft(2, '0')}-'
+              '${birthDate.day.toString().padLeft(2, '0')}',
+      },
+    );
+    return ElderUser.fromJson(d as Map<String, dynamic>);
+  }
+
+  // ── 가족 초대 코드 ─────────────────────────────────
+  /// 가족에게 알려줄 6자리 코드를 만든다.
+  Future<InviteCodeData> createInviteCode(int userId) async {
+    final d = await _send('POST', '/users/$userId/invite-codes');
+    return InviteCodeData.fromJson(d as Map<String, dynamic>);
+  }
+
+  /// 받은 코드로 가족에 합류한다. 코드는 한 번만 쓸 수 있다.
+  Future<LinkedFamily> acceptInviteCode(String code) async {
+    final d = await _send('POST', '/invite-codes/$code/accept');
+    return LinkedFamily.fromJson(d as Map<String, dynamic>);
+  }
+
   Future<dynamic> _sendMultipart(
     String path, {
     required String field,
@@ -716,6 +753,36 @@ class MyProfile {
     }
     return phoneNumber ?? '';
   }
+}
+
+/// 발급한 초대 코드.
+class InviteCodeData {
+  InviteCodeData({required this.inviteCode, required this.userId, this.expiresAt});
+
+  factory InviteCodeData.fromJson(Map<String, dynamic> json) => InviteCodeData(
+    inviteCode: json['inviteCode'] as String,
+    userId: json['userId'] as int,
+    expiresAt: DateTime.tryParse((json['expiresAt'] as String?) ?? '')?.toLocal(),
+  );
+
+  final String inviteCode;
+  final int userId;
+  final DateTime? expiresAt;
+}
+
+/// 초대 코드를 받아들인 결과.
+class LinkedFamily {
+  LinkedFamily({required this.userId, required this.name, required this.isPrimary});
+
+  factory LinkedFamily.fromJson(Map<String, dynamic> json) => LinkedFamily(
+    userId: json['userId'] as int,
+    name: (json['name'] as String?) ?? '',
+    isPrimary: json['isPrimary'] == true,
+  );
+
+  final int userId;
+  final String name;
+  final bool isPrimary;
 }
 
 /// 홈 화면이 한 번에 받아오는 값(GET /home).

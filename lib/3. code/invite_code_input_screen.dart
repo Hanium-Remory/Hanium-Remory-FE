@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import '../4. home/home_and_alert_center.dart';
+import '../services/settings_api.dart';
 
 const Color _background = Color(0xFFFBF6EE);
 const Color _brown = Color(0xFF9B674C);
@@ -28,6 +29,9 @@ class InviteCodeInputScreen extends StatefulWidget {
 class _InviteCodeInputScreenState extends State<InviteCodeInputScreen> {
   final TextEditingController _controller = TextEditingController();
   final FocusNode _focusNode = FocusNode();
+  final SettingsApi _api = SettingsApi();
+
+  bool _busy = false;
 
   String get _code => _controller.text;
 
@@ -38,16 +42,38 @@ class _InviteCodeInputScreenState extends State<InviteCodeInputScreen> {
     super.dispose();
   }
 
-  void _connect() {
-    if (_code.length != 6) return;
-    if (widget.onConnected != null) {
-      widget.onConnected!(_code);
-      return;
-    }
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (_) => const HomeAndAlertPreview()),
+  void _snack(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg), behavior: SnackBarBehavior.floating),
     );
+  }
+
+  /// 코드를 서버에 보내 가족으로 연결한다.
+  /// 없는 코드·이미 쓴 코드·기한 지난 코드는 서버가 사유를 알려준다.
+  Future<void> _connect() async {
+    if (_code.length != 6 || _busy) return;
+
+    setState(() => _busy = true);
+    try {
+      final linked = await _api.acceptInviteCode(_code);
+      if (!mounted) return;
+      _snack('${linked.name}님의 가족으로 연결되었어요.');
+      if (widget.onConnected != null) {
+        widget.onConnected!(_code);
+        return;
+      }
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const HomeAndAlertPreview()),
+      );
+    } on ApiException catch (e) {
+      _snack(e.message);
+    } catch (_) {
+      _snack('연결하지 못했어요. 잠시 후 다시 시도해 주세요.');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   void _goBack() {
@@ -177,7 +203,7 @@ class _InviteCodeInputScreenState extends State<InviteCodeInputScreen> {
                     width: double.infinity,
                     height: 52.h,
                     child: ElevatedButton(
-                      onPressed: _code.length == 6 ? _connect : null,
+                      onPressed: _code.length == 6 && !_busy ? _connect : null,
                       style: ElevatedButton.styleFrom(
                         elevation: 0,
                         backgroundColor: _brown,
