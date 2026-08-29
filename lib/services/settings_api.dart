@@ -363,6 +363,35 @@ class SettingsApi {
     );
   }
 
+  // ── 가족 대화방 ────────────────────────────────────
+  /// 대화 목록. 서버는 최신순으로 주므로 화면 순서에 맞게 뒤집어 준다.
+  /// 조회하면 서버가 안 읽은 메시지를 읽음 처리한다.
+  Future<List<ChatMessage>> chatMessages(int userId, {int size = 30}) async {
+    final d = await _send('GET', '/users/$userId/chat/messages?size=$size');
+    return (d as List)
+        .map((e) => ChatMessage.fromJson(e as Map<String, dynamic>))
+        .toList()
+        .reversed
+        .toList();
+  }
+
+  /// 메시지 전송. 내용과 사진 중 하나는 있어야 한다(서버도 같은 조건).
+  Future<ChatMessage> sendChatMessage(
+    int userId, {
+    String? content,
+    String? imageUrl,
+  }) async {
+    final d = await _send(
+      'POST',
+      '/users/$userId/chat/messages',
+      body: {
+        if (content != null && content.isNotEmpty) 'content': content,
+        if (imageUrl != null && imageUrl.isNotEmpty) 'imageUrl': imageUrl,
+      },
+    );
+    return ChatMessage.fromJson(d as Map<String, dynamic>);
+  }
+
   Future<dynamic> _sendMultipart(
     String path, {
     required String field,
@@ -662,6 +691,41 @@ class MyProfile {
     }
     return phoneNumber ?? '';
   }
+}
+
+/// 가족 대화방 메시지 한 건.
+class ChatMessage {
+  ChatMessage({
+    required this.messageId,
+    required this.senderType,
+    this.senderId,
+    this.content,
+    this.imageUrl,
+    this.createdAt,
+  });
+
+  factory ChatMessage.fromJson(Map<String, dynamic> json) => ChatMessage(
+    messageId: json['messageId'] as int,
+    senderType: (json['senderType'] as String?) ?? 'system',
+    senderId: json['senderId'] as int?,
+    content: json['content'] as String?,
+    imageUrl: json['imageUrl'] as String?,
+    createdAt: DateTime.tryParse((json['createdAt'] as String?) ?? '')?.toLocal(),
+  );
+
+  final int messageId;
+
+  /// user(어르신) | protector(가족) | system(인형이 알려주는 소식)
+  final String senderType;
+
+  /// protector 가 보낸 메시지일 때의 보호자 id.
+  final int? senderId;
+  final String? content;
+  final String? imageUrl;
+  final DateTime? createdAt;
+
+  bool get isSystem => senderType == 'system';
+  bool get hasPhoto => (imageUrl ?? '').isNotEmpty;
 }
 
 class LinkedUser {
