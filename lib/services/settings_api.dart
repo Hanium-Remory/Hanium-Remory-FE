@@ -392,6 +392,31 @@ class SettingsApi {
     return ChatMessage.fromJson(d as Map<String, dynamic>);
   }
 
+  // ── 홈 대시보드 ────────────────────────────────────
+  /// 홈에 필요한 값(연결 상태·감정·활동·안 읽은 수)을 한 번에 받아온다.
+  Future<HomeSummary> home(int userId) async =>
+      HomeSummary.fromJson(await _get('/home?userId=$userId'));
+
+  // ── 알림 ───────────────────────────────────────────
+  /// 내 알림 목록(최신순, 삭제한 것 제외).
+  Future<List<AppNotification>> notifications() async {
+    final d = await _send('GET', '/notifications');
+    return (d as List)
+        .map((e) => AppNotification.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<void> markNotificationRead(int notificationId) async =>
+      _send('PATCH', '/notifications/$notificationId/read');
+
+  // ── 리포트 ─────────────────────────────────────────
+  /// 가장 최근 데일리 리포트. 아직 만들어지지 않았으면 null 이다.
+  Future<DailyReportData?> dailyReport(int userId) async {
+    final d = await _send('GET', '/users/$userId/reports/daily');
+    if (d == null) return null;
+    return DailyReportData.fromJson(d as Map<String, dynamic>);
+  }
+
   Future<dynamic> _sendMultipart(
     String path, {
     required String field,
@@ -691,6 +716,178 @@ class MyProfile {
     }
     return phoneNumber ?? '';
   }
+}
+
+/// 홈 화면이 한 번에 받아오는 값(GET /home).
+class HomeSummary {
+  HomeSummary({
+    required this.userId,
+    required this.userName,
+    this.device,
+    this.currentEmotion,
+    required this.emotionTrend,
+    required this.activities,
+    required this.unreadNotificationCount,
+    required this.unreadChatCount,
+  });
+
+  factory HomeSummary.fromJson(Map<String, dynamic> json) {
+    final user = json['user'] as Map<String, dynamic>;
+    final device = json['device'] as Map<String, dynamic>?;
+    final emotion = json['currentEmotion'] as Map<String, dynamic>?;
+    return HomeSummary(
+      userId: user['userId'] as int,
+      userName: (user['name'] as String?) ?? '',
+      device: device == null ? null : HomeDevice.fromJson(device),
+      currentEmotion: emotion == null ? null : EmotionPoint.fromJson(emotion),
+      // 서버가 최신순으로 주므로 그래프 순서에 맞게 뒤집는다.
+      emotionTrend: ((json['emotionTrend'] as List?) ?? [])
+          .map((e) => EmotionPoint.fromJson(e as Map<String, dynamic>))
+          .toList()
+          .reversed
+          .toList(),
+      activities: ((json['activities'] as List?) ?? [])
+          .map((e) => ActivityItem.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      unreadNotificationCount: (json['unreadNotificationCount'] as int?) ?? 0,
+      unreadChatCount: (json['unreadChatCount'] as int?) ?? 0,
+    );
+  }
+
+  final int userId;
+  final String userName;
+
+  /// 아직 인형을 연결하지 않았으면 null.
+  final HomeDevice? device;
+  final EmotionPoint? currentEmotion;
+  final List<EmotionPoint> emotionTrend;
+  final List<ActivityItem> activities;
+  final int unreadNotificationCount;
+  final int unreadChatCount;
+}
+
+class HomeDevice {
+  HomeDevice({
+    required this.deviceId,
+    required this.name,
+    required this.connected,
+    required this.batteryLevel,
+    required this.batteryHoursLeft,
+  });
+
+  factory HomeDevice.fromJson(Map<String, dynamic> json) => HomeDevice(
+    deviceId: json['deviceId'] as int,
+    name: (json['name'] as String?) ?? '인형',
+    connected: json['connected'] == true,
+    batteryLevel: (json['batteryLevel'] as int?) ?? 0,
+    batteryHoursLeft: (json['batteryHoursLeft'] as int?) ?? 0,
+  );
+
+  final int deviceId;
+  final String name;
+  final bool connected;
+  final int batteryLevel;
+  final int batteryHoursLeft;
+}
+
+class EmotionPoint {
+  EmotionPoint({required this.emotionId, required this.emotion, this.createdAt});
+
+  factory EmotionPoint.fromJson(Map<String, dynamic> json) => EmotionPoint(
+    emotionId: json['emotionId'] as int,
+    emotion: (json['emotion'] as String?) ?? '',
+    createdAt: DateTime.tryParse((json['createdAt'] as String?) ?? '')?.toLocal(),
+  );
+
+  final int emotionId;
+
+  /// happy | calm | sad | angry | anxious | lonely
+  final String emotion;
+  final DateTime? createdAt;
+}
+
+class ActivityItem {
+  ActivityItem({
+    required this.activityId,
+    required this.activityType,
+    this.content,
+    this.createdAt,
+  });
+
+  factory ActivityItem.fromJson(Map<String, dynamic> json) => ActivityItem(
+    activityId: json['activityId'] as int,
+    activityType: (json['activityType'] as String?) ?? '',
+    content: json['content'] as String?,
+    createdAt: DateTime.tryParse((json['createdAt'] as String?) ?? '')?.toLocal(),
+  );
+
+  final int activityId;
+
+  /// DAILY_CONVERSATION 같은 대문자 코드.
+  final String activityType;
+  final String? content;
+  final DateTime? createdAt;
+}
+
+/// 알림 센터 한 건.
+class AppNotification {
+  AppNotification({
+    required this.notificationId,
+    required this.type,
+    this.title,
+    this.content,
+    required this.isRead,
+    this.createdAt,
+  });
+
+  factory AppNotification.fromJson(Map<String, dynamic> json) => AppNotification(
+    notificationId: json['notificationId'] as int,
+    type: (json['type'] as int?) ?? 0,
+    title: json['title'] as String?,
+    content: json['content'] as String?,
+    isRead: json['isRead'] == true,
+    createdAt: DateTime.tryParse((json['createdAt'] as String?) ?? '')?.toLocal(),
+  );
+
+  final int notificationId;
+
+  /// 0=긴급, 1=리포트. 그 밖은 일반 알림으로 본다.
+  final int type;
+  final String? title;
+  final String? content;
+  final bool isRead;
+  final DateTime? createdAt;
+
+  bool get isUrgent => type == 0;
+  bool get isReport => type == 1;
+}
+
+/// 데일리 리포트. 서버가 아직 만들지 않았으면 조회 결과가 null 이다.
+class DailyReportData {
+  DailyReportData({
+    required this.reportId,
+    required this.conversationCount,
+    required this.familyInteractionCount,
+    this.emotionSummary,
+    this.summary,
+    this.createdAt,
+  });
+
+  factory DailyReportData.fromJson(Map<String, dynamic> json) => DailyReportData(
+    reportId: json['reportId'] as int,
+    conversationCount: (json['conversationCount'] as int?) ?? 0,
+    familyInteractionCount: (json['familyInteractionCount'] as int?) ?? 0,
+    emotionSummary: json['emotionSummary'] as String?,
+    summary: json['summary'] as String?,
+    createdAt: DateTime.tryParse((json['createdAt'] as String?) ?? '')?.toLocal(),
+  );
+
+  final int reportId;
+  final int conversationCount;
+  final int familyInteractionCount;
+  final String? emotionSummary;
+  final String? summary;
+  final DateTime? createdAt;
 }
 
 /// 가족 대화방 메시지 한 건.

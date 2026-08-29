@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import '../4. home/home_and_alert_center.dart';
+import '../services/settings_api.dart';
 
 const Color _bg = Color(0xFFFBF6EE);
 const Color _brown = Color(0xFF936249);
@@ -11,58 +12,134 @@ const Color _line = Color(0xFFE8DCD2);
 const Color _yellow = Color(0xFFF6C43D);
 const Color _green = Color(0xFF5D9E41);
 
-class DailyReportScreen extends StatelessWidget {
+class DailyReportScreen extends StatefulWidget {
   const DailyReportScreen({super.key});
 
   @override
+  State<DailyReportScreen> createState() => _DailyReportScreenState();
+}
+
+class _DailyReportScreenState extends State<DailyReportScreen> {
+  final SettingsApi _api = SettingsApi();
+
+  String _name = '';
+  DailyReportData? _report;
+  List<double> _moodHeights = [];
+  bool _loading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final user = (await _api.myProfile()).mainUser;
+      if (user == null) {
+        setState(() {
+          _loading = false;
+          _error = '연결된 어르신이 없어요.\n가족 연결을 먼저 마쳐주세요.';
+        });
+        return;
+      }
+      final report = await _api.dailyReport(user.userId);
+      // 감정 흐름은 리포트에 없어서 홈이 주는 감정 기록을 그대로 쓴다.
+      final home = await _api.home(user.userId);
+      if (!mounted) return;
+      setState(() {
+        _name = user.name;
+        _report = report;
+        _moodHeights = [
+          for (final point in home.emotionTrend)
+            emotionHeightOf(point.emotion),
+        ];
+        _loading = false;
+      });
+    } on ApiException catch (e) {
+      if (mounted) setState(() { _loading = false; _error = e.message; });
+    } catch (_) {
+      if (mounted) {
+        setState(() { _loading = false; _error = '리포트를 불러오지 못했어요.'; });
+      }
+    }
+  }
+
+  /// 서버가 아직 주지 않는 값이라 자리만 알려준다.
+  Widget _notReadyYet(String message) => Padding(
+    padding: EdgeInsets.symmetric(vertical: 14.h),
+    child: Text(
+      message,
+      style: TextStyle(fontSize: 12.sp, height: 1.5, color: _muted),
+    ),
+  );
+
+  @override
   Widget build(BuildContext context) {
+    if (_loading) {
+      return const _PhoneFrame(
+        child: Center(child: CircularProgressIndicator(color: _brown)),
+      );
+    }
+    if (_error != null) {
+      return _PhoneFrame(
+        child: Center(
+          child: Padding(
+            padding: EdgeInsets.symmetric(horizontal: 32.w),
+            child: Text(
+              _error!,
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 13.sp, height: 1.5, color: _muted),
+            ),
+          ),
+        ),
+      );
+    }
+
+    final report = _report;
     return _PhoneFrame(
       child: Column(
         children: [
           SizedBox(height: 12.h),
-          const _Header(),
+          _Header(name: _name, at: report?.createdAt),
           SizedBox(height: 10.h),
           Expanded(
-            child: ListView(
-              physics: const BouncingScrollPhysics(),
-              padding: EdgeInsets.only(bottom: 14.h),
-              children: [
-                const _SummaryCard(),
-                SizedBox(height: 14.h),
-                Text('하루 감정 흐름', style: _sectionTitle()),
-                SizedBox(height: 8.h),
-                const _MoodFlowCard(),
-                SizedBox(height: 14.h),
-                Text('오늘 나눈 이야기', style: _sectionTitle()),
-                SizedBox(height: 8.h),
-                const _StoryCard(
-                  time: '오전 9:14 · 3분',
-                  label: '가족',
-                  title: '"우리 손주 보고 싶네. 요새 잘 지내는지 모르겠어."',
-                  tags: ['방문', '애정', '성취'],
-                ),
-                const _StoryCard(
-                  time: '오전 12:40 · 1분',
-                  label: '식사',
-                  title: '"오늘 점심은 미역국이었어. 따뜻하게 잘 먹었지."',
-                  tags: ['식사', '평온'],
-                ),
-                const _StoryCard(
-                  time: '오후 5:02 · 6분',
-                  label: '추억',
-                  title: '"우리 서연이가 그림 공부를 잘한다네. 기특하지."',
-                  tags: ['생일', '대화', '정서'],
-                ),
-                SizedBox(height: 10.h),
-                Text('일과', style: _sectionTitle()),
-                SizedBox(height: 8.h),
-                const _RoutineCard(),
-                SizedBox(height: 14.h),
-                Text('제안', style: _sectionTitle()),
-                SizedBox(height: 8.h),
-                const _SuggestionCard(),
-              ],
-            ),
+            child: report == null
+                ? Center(
+                    child: Text(
+                      '아직 리포트가 준비되지 않았어요.\n하루가 지나면 만들어져요.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 13.sp,
+                        height: 1.5,
+                        color: _muted,
+                      ),
+                    ),
+                  )
+                : ListView(
+                    physics: const BouncingScrollPhysics(),
+                    padding: EdgeInsets.only(bottom: 14.h),
+                    children: [
+                      _SummaryCard(name: _name, report: report),
+                      SizedBox(height: 14.h),
+                      Text('하루 감정 흐름', style: _sectionTitle()),
+                      SizedBox(height: 8.h),
+                      if (_moodHeights.length >= 2)
+                        _MoodFlowCard(heights: _moodHeights)
+                      else
+                        _notReadyYet('아직 기록된 감정이 없어요.'),
+                      SizedBox(height: 14.h),
+                      Text('오늘 나눈 이야기', style: _sectionTitle()),
+                      _notReadyYet('대화 발췌는 아직 제공되지 않아요.'),
+                      SizedBox(height: 10.h),
+                      Text('일과', style: _sectionTitle()),
+                      _notReadyYet('일과 기록은 아직 제공되지 않아요.'),
+                      SizedBox(height: 14.h),
+                      Text('제안', style: _sectionTitle()),
+                      _notReadyYet('제안은 아직 제공되지 않아요.'),
+                    ],
+                  ),
           ),
           const _HomeIndicator(),
         ],
@@ -96,10 +173,19 @@ class _PhoneFrame extends StatelessWidget {
 }
 
 class _Header extends StatelessWidget {
-  const _Header();
+  const _Header({required this.name, this.at});
+
+  final String name;
+  final DateTime? at;
+
+  static const List<String> _weekdays = [
+    '월요일', '화요일', '수요일', '목요일', '금요일', '토요일', '일요일',
+  ];
 
   @override
   Widget build(BuildContext context) {
+    final day = at ?? DateTime.now();
+    final dateText = '${day.month}월 ${day.day}일 (${_weekdays[day.weekday - 1]})';
     return Row(
       children: [
         IconButton(
@@ -115,19 +201,19 @@ class _Header extends StatelessWidget {
         ),
         Expanded(
           child: Column(
-            children: const [
+            children: [
               Text(
-                '오늘의 박순자님',
-                style: TextStyle(
+                '오늘의 $name님',
+                style: const TextStyle(
                   fontSize: 16,
                   color: _dark,
                   fontWeight: FontWeight.w900,
                 ),
               ),
-              SizedBox(height: 3),
+              const SizedBox(height: 3),
               Text(
-                '5월 19일 (월요일)',
-                style: TextStyle(
+                dateText,
+                style: const TextStyle(
                   fontSize: 9,
                   color: _muted,
                   fontWeight: FontWeight.w700,
@@ -143,7 +229,10 @@ class _Header extends StatelessWidget {
 }
 
 class _SummaryCard extends StatelessWidget {
-  const _SummaryCard();
+  const _SummaryCard({required this.name, required this.report});
+
+  final String name;
+  final DailyReportData report;
 
   @override
   Widget build(BuildContext context) {
@@ -155,9 +244,9 @@ class _SummaryCard extends StatelessWidget {
         children: [
           _Pill(text: '오늘의 요약', color: Colors.white.withValues(alpha: 0.8)),
           SizedBox(height: 12.h),
-          const Text(
-            '오늘은 박순자님이 평소보다\n조금 더 활기차게 지내셨어요.',
-            style: TextStyle(
+          Text(
+            report.summary ?? '오늘 $name님의 요약이 아직 없어요.',
+            style: const TextStyle(
               fontSize: 18,
               height: 1.28,
               color: _dark,
@@ -166,17 +255,26 @@ class _SummaryCard extends StatelessWidget {
           ),
           SizedBox(height: 14.h),
           Row(
-            children: const [
+            children: [
               Expanded(
-                child: _ScoreBox(title: '대화', value: '5번'),
+                child: _ScoreBox(
+                  title: '대화',
+                  value: '${report.conversationCount}번',
+                ),
               ),
-              SizedBox(width: 8),
+              const SizedBox(width: 8),
               Expanded(
-                child: _ScoreBox(title: '활동도', value: '72%'),
+                child: _ScoreBox(
+                  title: '가족 소통',
+                  value: '${report.familyInteractionCount}번',
+                ),
               ),
-              SizedBox(width: 8),
+              const SizedBox(width: 8),
               Expanded(
-                child: _ScoreBox(title: '활동', value: '보통'),
+                child: _ScoreBox(
+                  title: '감정',
+                  value: report.emotionSummary ?? '-',
+                ),
               ),
             ],
           ),
@@ -222,7 +320,10 @@ class _ScoreBox extends StatelessWidget {
 }
 
 class _MoodFlowCard extends StatelessWidget {
-  const _MoodFlowCard();
+  const _MoodFlowCard({required this.heights});
+
+  /// 0(바닥)~1(천장). 감정 기록을 오래된 순으로 늘어놓은 값.
+  final List<double> heights;
 
   @override
   Widget build(BuildContext context) {
@@ -234,7 +335,7 @@ class _MoodFlowCard extends StatelessWidget {
           SizedBox(
             height: 84.h,
             child: CustomPaint(
-              painter: _MoodChartPainter(),
+              painter: _MoodChartPainter(heights: heights),
               child: const SizedBox.expand(),
             ),
           ),
@@ -273,6 +374,9 @@ class _MoodFlowCard extends StatelessWidget {
   }
 }
 
+// 아래 세 카드는 서버가 아직 주지 않는 값(대화 발췌·일과·제안)을 위한 것이다.
+// 리포트 응답에 필드가 생기면 바로 쓸 수 있게 디자인을 남겨 둔다.
+// ignore: unused_element
 class _StoryCard extends StatelessWidget {
   const _StoryCard({
     required this.time,
@@ -326,6 +430,7 @@ class _StoryCard extends StatelessWidget {
   }
 }
 
+// ignore: unused_element
 class _RoutineCard extends StatelessWidget {
   const _RoutineCard();
 
@@ -444,6 +549,7 @@ class _RoutineRow extends StatelessWidget {
   }
 }
 
+// ignore: unused_element
 class _SuggestionCard extends StatelessWidget {
   const _SuggestionCard();
 
@@ -520,6 +626,10 @@ class _Pill extends StatelessWidget {
 }
 
 class _MoodChartPainter extends CustomPainter {
+  const _MoodChartPainter({required this.heights});
+
+  final List<double> heights;
+
   @override
   void paint(Canvas canvas, Size size) {
     final gridPaint = Paint()
@@ -545,15 +655,12 @@ class _MoodChartPainter extends CustomPainter {
       canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
     }
 
+    if (heights.length < 2) return;
+
+    final step = size.width / (heights.length - 1);
     final points = [
-      Offset(0, size.height * .63),
-      Offset(size.width * .12, size.height * .5),
-      Offset(size.width * .24, size.height * .42),
-      Offset(size.width * .38, size.height * .51),
-      Offset(size.width * .52, size.height * .48),
-      Offset(size.width * .66, size.height * .61),
-      Offset(size.width * .82, size.height * .38),
-      Offset(size.width, size.height * .47),
+      for (var i = 0; i < heights.length; i++)
+        Offset(step * i, size.height * (1 - heights[i].clamp(0.0, 1.0))),
     ];
 
     final path = Path()..moveTo(points.first.dx, points.first.dy);
@@ -576,7 +683,8 @@ class _MoodChartPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(covariant _MoodChartPainter oldDelegate) =>
+      oldDelegate.heights != heights;
 }
 
 class _HomeIndicator extends StatelessWidget {

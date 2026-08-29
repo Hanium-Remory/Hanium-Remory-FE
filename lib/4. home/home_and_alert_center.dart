@@ -8,7 +8,7 @@ import '../6. chat/family_chat_screen.dart';
 import '../7. report/daily_report_screen.dart';
 import '../8. vocie/voice_record_flow.dart';
 import '../9. set/settings_flow.dart';
-import '../services/session_store.dart';
+import '../services/settings_api.dart';
 
 const Color _bg = Color(0xFFFBF6EE);
 const Color _brown = Color(0xFF936249);
@@ -16,6 +16,32 @@ const Color _dark = Color(0xFF2F2521);
 const Color _muted = Color(0xFF7C6B61);
 const Color _line = Color(0xFFE8DCD2);
 const Color _yellow = Color(0xFFF6C43D);
+
+/// 서버가 주는 감정 코드를 화면 문구로 바꾼다.
+const Map<String, String> _emotionLabels = {
+  'happy': '기뻐요',
+  'calm': '평온해요',
+  'sad': '슬퍼요',
+  'angry': '화나요',
+  'anxious': '불안해요',
+  'lonely': '외로워요',
+};
+
+/// 감정 추이 선의 높이(0=바닥, 1=천장). 점수 컬럼이 없어서 감정별로 정해 둔다.
+const Map<String, double> _emotionHeights = {
+  'happy': 0.85,
+  'calm': 0.65,
+  'lonely': 0.40,
+  'anxious': 0.32,
+  'sad': 0.25,
+  'angry': 0.20,
+};
+
+String _emotionLabelOf(String? emotion) =>
+    _emotionLabels[emotion] ?? '아직 기록이 없어요';
+
+/// 감정 코드 → 그래프 높이. 리포트 화면도 같은 기준을 써야 해서 공개한다.
+double emotionHeightOf(String? emotion) => _emotionHeights[emotion] ?? 0.5;
 
 class HomeAndAlertPreview extends StatefulWidget {
   const HomeAndAlertPreview({super.key});
@@ -35,13 +61,114 @@ class _HomeAndAlertPreviewState extends State<HomeAndAlertPreview> {
   }
 }
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key, required this.onOpenAlerts});
 
   final VoidCallback onOpenAlerts;
 
   @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  final SettingsApi _api = SettingsApi();
+
+  HomeSummary? _summary;
+  bool _loading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final user = (await _api.myProfile()).mainUser;
+      if (user == null) {
+        setState(() {
+          _loading = false;
+          _error = '연결된 어르신이 없어요.\n가족 연결을 먼저 마쳐주세요.';
+        });
+        return;
+      }
+      final summary = await _api.home(user.userId);
+      if (!mounted) return;
+      setState(() {
+        _summary = summary;
+        _loading = false;
+      });
+    } on ApiException catch (e) {
+      if (mounted) setState(() { _loading = false; _error = e.message; });
+    } catch (_) {
+      if (mounted) {
+        setState(() { _loading = false; _error = '홈 정보를 불러오지 못했어요.'; });
+      }
+    }
+  }
+
+  /// 활동 코드에 맞는 아이콘·배경색. 모르는 코드는 기본값으로 보여준다.
+  ({IconData icon, Color tint}) _activityStyle(String type) {
+    final t = type.toUpperCase();
+    if (t.contains('CONVERSATION') || t.contains('CHAT')) {
+      return (icon: Icons.chat_bubble_outline, tint: const Color(0xFFE7F6D8));
+    }
+    if (t.contains('MEDICATION')) {
+      return (icon: Icons.medication_outlined, tint: const Color(0xFFFFE8C9));
+    }
+    if (t.contains('VOICE')) {
+      return (icon: Icons.mic_none, tint: const Color(0xFFF6E6D6));
+    }
+    return (icon: Icons.schedule, tint: const Color(0xFFFFF3C8));
+  }
+
+  String _activityTitle(ActivityItem a) {
+    switch (a.activityType.toUpperCase()) {
+      case 'DAILY_CONVERSATION':
+        return '인형과 대화했어요';
+      case 'MEDICATION':
+        return '약 복용 시간이었어요';
+      case 'VOICE_PLAY':
+        return '가족 목소리를 들으셨어요';
+      default:
+        // 모르는 코드는 감추지 말고 그대로 보여준다.
+        return a.activityType;
+    }
+  }
+
+  String _timelineTime(DateTime? at) {
+    if (at == null) return '';
+    final period = at.hour < 12 ? '오전' : '오후';
+    final hour = at.hour % 12 == 0 ? 12 : at.hour % 12;
+    return '$period\n$hour시 ${at.minute.toString().padLeft(2, '0')}분';
+  }
+
+  @override
   Widget build(BuildContext context) {
+    if (_loading) {
+      return const _PhoneFrame(
+        child: Center(child: CircularProgressIndicator(color: _brown)),
+      );
+    }
+    final summary = _summary;
+    if (summary == null) {
+      return _PhoneFrame(
+        child: Center(
+          child: Padding(
+            padding: EdgeInsets.symmetric(horizontal: 32.w),
+            child: Text(
+              _error ?? '홈 정보를 불러오지 못했어요.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 13.sp, height: 1.5, color: _muted),
+            ),
+          ),
+        ),
+      );
+    }
+    final name = summary.userName;
+    final onOpenAlerts = widget.onOpenAlerts;
+
     return _PhoneFrame(
       child: Column(
         children: [
@@ -52,15 +179,21 @@ class HomeScreen extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   SizedBox(height: 12.h),
-                  _TopBar(onOpenAlerts: onOpenAlerts),
+                  _TopBar(
+                    onOpenAlerts: onOpenAlerts,
+                    hasUnread: summary.unreadNotificationCount > 0,
+                  ),
                   SizedBox(height: 12.h),
                   const _KoreanDateTimeText(),
                   SizedBox(height: 4.h),
-                  Text('오늘 박순자님은 잘 지내고 계세요', style: _headline()),
+                  Text('오늘 $name님은 잘 지내고 계세요', style: _headline()),
                   SizedBox(height: 12.h),
-                  const _StatusCard(),
+                  _StatusCard(name: name, device: summary.device),
                   SizedBox(height: 10.h),
-                  const _MoodCard(),
+                  _MoodCard(
+                    emotion: summary.currentEmotion?.emotion,
+                    trend: summary.emotionTrend,
+                  ),
                   SizedBox(height: 10.h),
                   Row(
                     children: [
@@ -107,11 +240,15 @@ class HomeScreen extends StatelessWidget {
                       Expanded(
                         child: _QuickTile(
                           title: '가족 대화',
-                          subtitle: '새 메시지 3',
+                          subtitle: summary.unreadChatCount > 0
+                              ? '새 메시지 ${summary.unreadChatCount}'
+                              : '가족과 이야기해요',
                           icon: Icons.chat_bubble_outline,
                           color: Colors.white,
                           textColor: _dark,
-                          badge: '3',
+                          badge: summary.unreadChatCount > 0
+                              ? '${summary.unreadChatCount}'
+                              : null,
                           onTap: () {
                             Navigator.push(
                               context,
@@ -143,36 +280,25 @@ class HomeScreen extends StatelessWidget {
                     ],
                   ),
                   SizedBox(height: 16.h),
-                  Text('오늘 박순자님이 이렇게 지내셨어요', style: _sectionTitle()),
+                  Text('오늘 $name님이 이렇게 지내셨어요', style: _sectionTitle()),
                   SizedBox(height: 8.h),
-                  const _TimelineItem(
-                    icon: Icons.chat_bubble_outline,
-                    title: '인형과 3분 대화',
-                    subtitle: '손주, 감정 이야기',
-                    time: '오전\n9시 14분',
-                    tint: Color(0xFFE7F6D8),
-                  ),
-                  const _TimelineItem(
-                    icon: Icons.schedule,
-                    title: '인형이 먼저 안부를 여쭈었어요',
-                    subtitle: '아침 8시 30분 알림 시간',
-                    time: '오전\n8시 30분',
-                    tint: Color(0xFFFFF3C8),
-                  ),
-                  const _TimelineItem(
-                    icon: Icons.meeting_room_outlined,
-                    title: '아침 약 복용 시간이예요',
-                    subtitle: '아침 약물이 남았어요',
-                    time: '오전\n8시 00분',
-                    tint: Color(0xFFFFE8C9),
-                  ),
-                  const _TimelineItem(
-                    icon: Icons.mic_none,
-                    title: '며느리한테 안부 전해달라 하셨어요',
-                    subtitle: '대화방에서 확인해보세요',
-                    time: '오전\n7시 50분',
-                    tint: Color(0xFFF6E6D6),
-                  ),
+                  if (summary.activities.isEmpty)
+                    Padding(
+                      padding: EdgeInsets.symmetric(vertical: 18.h),
+                      child: Text(
+                        '아직 오늘 기록이 없어요.',
+                        style: TextStyle(fontSize: 13.sp, color: _muted),
+                      ),
+                    )
+                  else
+                    for (final activity in summary.activities)
+                      _TimelineItem(
+                        icon: _activityStyle(activity.activityType).icon,
+                        title: _activityTitle(activity),
+                        subtitle: activity.content ?? '',
+                        time: _timelineTime(activity.createdAt),
+                        tint: _activityStyle(activity.activityType).tint,
+                      ),
                   SizedBox(height: 10.h),
                 ],
               ),
@@ -196,59 +322,121 @@ class AlertCenterScreen extends StatefulWidget {
 }
 
 class _AlertCenterScreenState extends State<AlertCenterScreen> {
+  final SettingsApi _api = SettingsApi();
+
   String _selectedTab = '전체';
+  List<AppNotification> _notifications = [];
+  bool _loading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final list = await _api.notifications();
+      if (!mounted) return;
+      setState(() {
+        _notifications = list;
+        _loading = false;
+      });
+    } on ApiException catch (e) {
+      if (mounted) setState(() { _loading = false; _error = e.message; });
+    } catch (_) {
+      if (mounted) {
+        setState(() { _loading = false; _error = '알림을 불러오지 못했어요.'; });
+      }
+    }
+  }
+
+  /// 안 읽은 것만 읽음 처리한다. 서버에 일괄 처리가 없어 한 건씩 부른다.
+  Future<void> _markAllRead() async {
+    final unread = _notifications.where((n) => !n.isRead).toList();
+    if (unread.isEmpty) return;
+    try {
+      for (final n in unread) {
+        await _api.markNotificationRead(n.notificationId);
+      }
+      await _load();
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('읽음 처리에 실패했어요.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  String? _labelOf(AppNotification n) {
+    if (n.isUrgent) return '긴급';
+    if (n.isReport) return '리포트';
+    return null;
+  }
+
+  Widget _card(AppNotification n) {
+    return _AlertCard(
+      icon: n.isUrgent
+          ? Icons.warning_amber_rounded
+          : n.isReport
+          ? Icons.show_chart
+          : Icons.notifications_none,
+      label: _labelOf(n),
+      title: n.title ?? '알림',
+      body: n.content ?? '',
+      action: n.isReport ? '리포트 열어보기' : null,
+      urgent: n.isUrgent,
+      warm: n.isReport,
+      onTap: n.isReport
+          ? () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const DailyReportScreen()),
+              );
+            }
+          : null,
+    );
+  }
+
+  Widget _buildList() {
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator(color: _brown));
+    }
+    if (_error != null) {
+      return Center(
+        child: Padding(
+          padding: EdgeInsets.symmetric(horizontal: 32.w),
+          child: Text(
+            _error!,
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 13.sp, height: 1.5, color: _muted),
+          ),
+        ),
+      );
+    }
+    final visible = _selectedTab == '전체'
+        ? _notifications
+        : _notifications.where((n) => _labelOf(n) == _selectedTab).toList();
+    if (visible.isEmpty) {
+      return Center(
+        child: Text(
+          '아직 알림이 없어요.',
+          style: TextStyle(fontSize: 13.sp, color: _muted),
+        ),
+      );
+    }
+    return ListView(
+      physics: const BouncingScrollPhysics(),
+      children: [for (final n in visible) _card(n)],
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    final alerts = <Widget>[
-      _AlertCard(
-        icon: Icons.warning_amber_rounded,
-        label: '긴급',
-        title: '어머니의 감정이 평소와 달라요',
-        body: '한 시간째 슬픔과 불안이 이어지고 있어요. 직접 전화 한 통 드려보시는 건 어떨까요?',
-        action: '바로 전화하기',
-        urgent: true,
-      ),
-      _AlertCard(
-        icon: Icons.show_chart,
-        label: '리포트',
-        title: '오늘의 데일리 리포트가 준비됐어요',
-        body: '대화 5번, 활동도 72%, 감정 흐름이 평온하게 유지되었어요.',
-        action: '리포트 열어보기',
-        warm: true,
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const DailyReportScreen()),
-          );
-        },
-      ),
-      _AlertCard(
-        icon: Icons.chat_bubble_outline,
-        title: '${SessionStore.elderHonorific}이 가족들과 이야기하고 싶다고 하셨어요',
-        body: '"우리 손주들은 크고 있나. 요새 잘 지내나 모르겠어..."',
-        action: '대화방 열기',
-      ),
-      const _AlertCard(
-        icon: Icons.warning_amber_rounded,
-        title: '인형 연결이 잠시 끊겼어요',
-        body: '14분 만에 다시 연결되었어요. 와이파이 신호를 확인해보세요.',
-        action: '연결 설정',
-      ),
-      _AlertCard(
-        icon: Icons.mic_none,
-        title: '${SessionStore.elderHonorific}이 녹음하신 목소리를 들으셨어요',
-        body: '목소리를 두 번 들으셨어요.',
-      ),
-    ];
-
-    final visibleAlerts = _selectedTab == '전체'
-        ? alerts
-        : alerts.where((alert) {
-            final card = alert as _AlertCard;
-            return card.label == _selectedTab;
-          }).toList();
-
     return _PhoneFrame(
       child: Column(
         children: [
@@ -270,7 +458,10 @@ class _AlertCenterScreenState extends State<AlertCenterScreen> {
                   style: _navTitle(),
                 ),
               ),
-              Text('모두 읽음', style: _caption()),
+              GestureDetector(
+                onTap: _markAllRead,
+                child: Text('모두 읽음', style: _caption()),
+              ),
             ],
           ),
           SizedBox(height: 14.h),
@@ -279,12 +470,7 @@ class _AlertCenterScreenState extends State<AlertCenterScreen> {
             onSelected: (tab) => setState(() => _selectedTab = tab),
           ),
           SizedBox(height: 10.h),
-          Expanded(
-            child: ListView(
-              physics: const BouncingScrollPhysics(),
-              children: visibleAlerts,
-            ),
-          ),
+          Expanded(child: _buildList()),
           const _HomeIndicator(),
         ],
       ),
@@ -357,17 +543,20 @@ class _KoreanDateTimeTextState extends State<_KoreanDateTimeText> {
 }
 
 class _TopBar extends StatelessWidget {
-  const _TopBar({required this.onOpenAlerts});
+  const _TopBar({required this.onOpenAlerts, required this.hasUnread});
 
   final VoidCallback onOpenAlerts;
+  final bool hasUnread;
 
   @override
   Widget build(BuildContext context) {
+    final now = DateTime.now();
+    final hour = now.hour % 12 == 0 ? 12 : now.hour % 12;
     return Row(
       children: [
-        const Text(
-          '9:41',
-          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+        Text(
+          '$hour:${now.minute.toString().padLeft(2, '0')}',
+          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
         ),
         const Spacer(),
         GestureDetector(
@@ -388,18 +577,19 @@ class _TopBar extends StatelessWidget {
                   color: _dark,
                 ),
               ),
-              Positioned(
-                right: 7,
-                top: 7,
-                child: Container(
-                  width: 6,
-                  height: 6,
-                  decoration: const BoxDecoration(
-                    color: Color(0xFFD55045),
-                    shape: BoxShape.circle,
+              if (hasUnread)
+                Positioned(
+                  right: 7,
+                  top: 7,
+                  child: Container(
+                    width: 6,
+                    height: 6,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFD55045),
+                      shape: BoxShape.circle,
+                    ),
                   ),
                 ),
-              ),
             ],
           ),
         ),
@@ -409,10 +599,42 @@ class _TopBar extends StatelessWidget {
 }
 
 class _StatusCard extends StatelessWidget {
-  const _StatusCard();
+  const _StatusCard({required this.name, this.device});
+
+  final String name;
+
+  /// 인형을 아직 연결하지 않았으면 null.
+  final HomeDevice? device;
 
   @override
   Widget build(BuildContext context) {
+    final connected = device?.connected == true;
+    final String badge;
+    final Color badgeBg;
+    final Color badgeFg;
+    if (device == null) {
+      badge = '연결 전';
+      badgeBg = const Color(0xFFF0E8DF);
+      badgeFg = _muted;
+    } else if (connected) {
+      badge = '안정적';
+      badgeBg = const Color(0xFFE8F6D9);
+      badgeFg = const Color(0xFF4C8B3D);
+    } else {
+      badge = '연결 끊김';
+      badgeBg = const Color(0xFFFBE3E1);
+      badgeFg = const Color(0xFFD55045);
+    }
+
+    final String headline;
+    if (device == null) {
+      headline = '인형을 아직\n연결하지 않았어요.';
+    } else if (connected) {
+      headline = '지금 $name님과\n이야기 중이에요.';
+    } else {
+      headline = '$name님의 인형이\n연결되어 있지 않아요.';
+    }
+
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: _cardDecoration(color: const Color(0xFFFFF3D2)),
@@ -434,40 +656,42 @@ class _StatusCard extends StatelessWidget {
                     vertical: 3,
                   ),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFE8F6D9),
+                    color: badgeBg,
                     borderRadius: BorderRadius.circular(99),
                   ),
-                  child: const Text(
-                    '안정적',
+                  child: Text(
+                    badge,
                     style: TextStyle(
                       fontSize: 10,
-                      color: Color(0xFF4C8B3D),
+                      color: badgeFg,
                       fontWeight: FontWeight.w800,
                     ),
                   ),
                 ),
                 SizedBox(height: 8.h),
-                const Text(
-                  '지금 박순자님과\n이야기 중이에요.',
-                  style: TextStyle(
+                Text(
+                  headline,
+                  style: const TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w900,
                     color: _dark,
                     height: 1.25,
                   ),
                 ),
-                SizedBox(height: 4.h),
-                Row(
-                  children: [
-                    const Icon(
-                      Icons.battery_full,
-                      size: 13,
-                      color: Color(0xFF5D9E41),
-                    ),
-                    SizedBox(width: 3.w),
-                    Text('78%', style: _caption()),
-                  ],
-                ),
+                if (device != null) ...[
+                  SizedBox(height: 4.h),
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.battery_full,
+                        size: 13,
+                        color: Color(0xFF5D9E41),
+                      ),
+                      SizedBox(width: 3.w),
+                      Text('${device!.batteryLevel}%', style: _caption()),
+                    ],
+                  ),
+                ],
               ],
             ),
           ),
@@ -478,7 +702,11 @@ class _StatusCard extends StatelessWidget {
 }
 
 class _MoodCard extends StatelessWidget {
-  const _MoodCard();
+  const _MoodCard({this.emotion, required this.trend});
+
+  /// 가장 최근 감정 코드. 기록이 없으면 null.
+  final String? emotion;
+  final List<EmotionPoint> trend;
 
   @override
   Widget build(BuildContext context) {
@@ -504,9 +732,9 @@ class _MoodCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text('지금 감정', style: _caption()),
-                    const Text(
-                      '평온해요',
-                      style: TextStyle(
+                    Text(
+                      _emotionLabelOf(emotion),
+                      style: const TextStyle(
                         fontSize: 15,
                         color: _dark,
                         fontWeight: FontWeight.w900,
@@ -522,7 +750,12 @@ class _MoodCard extends StatelessWidget {
           SizedBox(
             height: 34.h,
             child: CustomPaint(
-              painter: _MoodLinePainter(),
+              painter: _MoodLinePainter(
+                heights: [
+                  for (final point in trend)
+                    _emotionHeights[point.emotion] ?? 0.5,
+                ],
+              ),
               child: const SizedBox.expand(),
             ),
           ),
@@ -947,6 +1180,11 @@ class _AlertCard extends StatelessWidget {
 }
 
 class _MoodLinePainter extends CustomPainter {
+  const _MoodLinePainter({required this.heights});
+
+  /// 0(바닥)~1(천장). 기록이 없으면 선을 그리지 않는다.
+  final List<double> heights;
+
   @override
   void paint(Canvas canvas, Size size) {
     final gridPaint = Paint()
@@ -963,15 +1201,12 @@ class _MoodLinePainter extends CustomPainter {
       canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
     }
 
+    if (heights.length < 2) return;
+
+    final step = size.width / (heights.length - 1);
     final points = [
-      Offset(0, size.height * .58),
-      Offset(size.width * .15, size.height * .62),
-      Offset(size.width * .28, size.height * .52),
-      Offset(size.width * .43, size.height * .66),
-      Offset(size.width * .58, size.height * .45),
-      Offset(size.width * .74, size.height * .50),
-      Offset(size.width * .88, size.height * .45),
-      Offset(size.width, size.height * .44),
+      for (var i = 0; i < heights.length; i++)
+        Offset(step * i, size.height * (1 - heights[i].clamp(0.0, 1.0))),
     ];
 
     final path = Path()..moveTo(points.first.dx, points.first.dy);
@@ -982,7 +1217,8 @@ class _MoodLinePainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(covariant _MoodLinePainter oldDelegate) =>
+      oldDelegate.heights != heights;
 }
 
 class _HomeIndicator extends StatelessWidget {
