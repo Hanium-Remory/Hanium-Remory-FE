@@ -938,6 +938,7 @@ class DailyReportData {
     required this.familyInteractionCount,
     this.emotionSummary,
     this.summary,
+    this.suggestion,
     this.createdAt,
   });
 
@@ -950,6 +951,7 @@ class DailyReportData {
     familyInteractionCount: (json['familyInteractionCount'] as int?) ?? 0,
     emotionSummary: json['emotionSummary'] as String?,
     summary: json['summary'] as String?,
+    suggestion: json['suggestion'] as String?,
     createdAt: DateTime.tryParse((json['createdAt'] as String?) ?? '')?.toLocal(),
   );
 
@@ -962,6 +964,9 @@ class DailyReportData {
   final int familyInteractionCount;
   final String? emotionSummary;
   final String? summary;
+
+  /// 보호자가 오늘 해볼 만한 것. 서버가 못 만들었으면 비어 있다.
+  final String? suggestion;
   final DateTime? createdAt;
 }
 

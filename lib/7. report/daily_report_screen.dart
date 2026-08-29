@@ -138,7 +138,11 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
                       _notReadyYet('일과 기록은 아직 제공되지 않아요.'),
                       SizedBox(height: 14.h),
                       Text('제안', style: _sectionTitle()),
-                      _notReadyYet('제안은 아직 제공되지 않아요.'),
+                      SizedBox(height: 8.h),
+                      if ((report.suggestion ?? '').isNotEmpty)
+                        _SuggestionCard(text: report.suggestion!)
+                      else
+                        _notReadyYet('오늘은 드릴 제안이 없어요.'),
                     ],
                   ),
           ),
@@ -375,7 +379,7 @@ class _MoodFlowCard extends StatelessWidget {
   }
 }
 
-// 아래 세 카드는 서버가 아직 주지 않는 값(대화 발췌·일과·제안)을 위한 것이다.
+// 아래 두 카드는 서버가 아직 주지 않는 값(대화 발췌·일과)을 위한 것이다.
 // 리포트 응답에 필드가 생기면 바로 쓸 수 있게 디자인을 남겨 둔다.
 // ignore: unused_element
 class _StoryCard extends StatelessWidget {
@@ -550,9 +554,10 @@ class _RoutineRow extends StatelessWidget {
   }
 }
 
-// ignore: unused_element
 class _SuggestionCard extends StatelessWidget {
-  const _SuggestionCard();
+  const _SuggestionCard({required this.text});
+
+  final String text;
 
   @override
   Widget build(BuildContext context) {
@@ -580,17 +585,15 @@ class _SuggestionCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  '저녁 식사 시간이 지나도록 식사 확인이 안 되었어요',
-                  style: TextStyle(
+                Text(
+                  text,
+                  style: const TextStyle(
                     fontSize: 12,
-                    height: 1.35,
+                    height: 1.4,
                     color: _dark,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
-                const SizedBox(height: 5),
-                Text('안부 전화 한 통 드려보시는 건 어떨까요?', style: _tiny()),
               ],
             ),
           ),
