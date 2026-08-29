@@ -412,7 +412,7 @@ class _PatientInfoPage extends StatefulWidget {
 }
 
 class _PatientInfoPageState extends State<_PatientInfoPage> {
-  final _nameController = TextEditingController(text: '박순자');
+  final _nameController = TextEditingController();
   String _selectedGender = '여성';
 
   @override

@@ -39,6 +39,24 @@ class _MemoryAddFlowState extends State<MemoryAddFlow> {
   final SettingsApi _api = SettingsApi();
   bool _saved = false;
 
+  /// 연결된 어르신. 화면 문구와 저장에 모두 쓰므로 들어올 때 한 번만 받는다.
+  LinkedUser? _elder;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadElder();
+  }
+
+  Future<void> _loadElder() async {
+    try {
+      final elder = (await _api.myProfile()).mainUser;
+      if (mounted) setState(() => _elder = elder);
+    } catch (_) {
+      // 이름을 못 받아도 입력은 할 수 있게 둔다. 저장할 때 다시 확인한다.
+    }
+  }
+
   /// 사진을 먼저 올리고, 받은 URL 로 추억을 등록한다.
   /// 실패하면 예외를 그대로 올려 입력 화면이 사유를 보여주게 한다.
   Future<void> _saveMemory({
@@ -48,7 +66,7 @@ class _MemoryAddFlowState extends State<MemoryAddFlow> {
     required String period,
     required String description,
   }) async {
-    final user = (await _api.myProfile()).mainUser;
+    final user = _elder ?? (await _api.myProfile()).mainUser;
     if (user == null) {
       throw ApiException('연결된 어르신이 없어요. 가족 연결을 먼저 마쳐주세요.', 400);
     }
@@ -82,14 +100,17 @@ class _MemoryAddFlowState extends State<MemoryAddFlow> {
   Widget build(BuildContext context) {
     return _saved
         ? MemorySavedScreen(onBack: _backToForm, onConfirm: _goHome)
-        : MemoryAddScreen(onSave: _saveMemory);
+        : MemoryAddScreen(onSave: _saveMemory, elderName: _elder?.name);
   }
 }
 
 class MemoryAddScreen extends StatefulWidget {
-  const MemoryAddScreen({super.key, required this.onSave});
+  const MemoryAddScreen({super.key, required this.onSave, this.elderName});
 
   final MemorySubmit onSave;
+
+  /// 연결된 어르신 이름. 아직 못 받았으면 null.
+  final String? elderName;
 
   @override
   State<MemoryAddScreen> createState() => _MemoryAddScreenState();
@@ -213,7 +234,11 @@ class _MemoryAddScreenState extends State<MemoryAddScreen> {
                         }),
                       ),
                       SizedBox(height: 18.h),
-                      _Label('박순자님과 나눌 이야기'),
+                      _Label(
+                        widget.elderName == null
+                            ? '나눌 이야기'
+                            : '${widget.elderName}님과 나눌 이야기',
+                      ),
                       _TextFieldBox(
                         controller: _storyController,
                         hintText:

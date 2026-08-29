@@ -28,6 +28,24 @@ class _VoiceRecordFlowState extends State<VoiceRecordFlow> {
   int _step = 0;
   int _recordedSeconds = 0;
 
+  /// 안내 문구에 쓸 어르신 이름. 못 받으면 문구에서 이름을 뺀다.
+  String? _elderName;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadElderName();
+  }
+
+  Future<void> _loadElderName() async {
+    try {
+      final elder = (await _api.myProfile()).mainUser;
+      if (mounted) setState(() => _elderName = elder?.name);
+    } catch (_) {
+      // 이름이 없어도 녹음은 할 수 있다.
+    }
+  }
+
   // 실제 녹음(record 패키지)이 붙으면 이 경로가 채워진다. 지금은 항상 null 이라
   // 서버 업로드를 건너뛴다. 경로만 들어오면 아래 업로드→폴링이 그대로 동작한다.
   Uint8List? _recordedAudio;
@@ -168,7 +186,7 @@ class _VoiceRecordFlowState extends State<VoiceRecordFlow> {
   @override
   Widget build(BuildContext context) {
     final pages = [
-      VoiceIntroScreen(onStart: _next),
+      VoiceIntroScreen(onStart: _next, elderName: _elderName),
       VoiceRecordingScreen(
         onBack: _back,
         onDone: _finishRecording,
@@ -197,9 +215,12 @@ class _VoiceRecordFlowState extends State<VoiceRecordFlow> {
 }
 
 class VoiceIntroScreen extends StatelessWidget {
-  const VoiceIntroScreen({super.key, required this.onStart});
+  const VoiceIntroScreen({super.key, required this.onStart, this.elderName});
 
   final VoidCallback onStart;
+
+  /// 연결된 어르신 이름. 아직 못 받았으면 null.
+  final String? elderName;
 
   @override
   Widget build(BuildContext context) {
@@ -262,7 +283,9 @@ class VoiceIntroScreen extends StatelessWidget {
               SizedBox(height: 42.h),
               Center(
                 child: Text(
-                  '이 목소리로 인형이\n박순자님과 이야기해요',
+                  elderName == null
+                      ? '이 목소리로 인형이\n이야기해요'
+                      : '이 목소리로 인형이\n$elderName님과 이야기해요',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 21.sp,
