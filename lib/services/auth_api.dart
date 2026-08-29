@@ -9,9 +9,15 @@ import 'package:http/http.dart' as http;
 import 'package:passkeys/authenticator.dart';
 import 'package:passkeys/types.dart';
 
-/// 백엔드 주소. 실제 배포 도메인으로 교체하세요.
+/// 백엔드 주소. 기본값은 EC2 운영 서버다.
 /// (패스키는 이 도메인이 rp_id 이며 assetlinks 를 HTTPS로 서빙해야 함)
-const String kBackendBaseUrl = 'https://remory-passkey-hanium.onrender.com';
+///
+/// 로컬 백엔드로 붙이려면 실행할 때 넘긴다:
+///   flutter run --dart-define=BACKEND_BASE_URL=http://localhost:8000
+const String kBackendBaseUrl = String.fromEnvironment(
+  'BACKEND_BASE_URL',
+  defaultValue: 'https://32-184-124-116.sslip.io',
+);
 
 /// 로그인/가입 성공 시 발급되는 세션 정보.
 class AuthResult {

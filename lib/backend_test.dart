@@ -16,6 +16,8 @@ import 'package:http/http.dart' as http;
 import 'package:passkeys/authenticator.dart';
 import 'package:passkeys/types.dart';
 
+import 'services/auth_api.dart';
+
 void main() => runApp(const RemoryMockApp());
 
 class RemoryMockApp extends StatelessWidget {
@@ -41,10 +43,8 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   final _passkey = PasskeyAuthenticator();
 
-  // ngrok 등으로 발급받은 HTTPS 주소로 바꿔서 실행하세요.
-  final _baseUrl = TextEditingController(
-    text: 'https://remory-passkey-hanium.onrender.com',
-  );
+  // 기본값은 EC2 운영 서버. 다른 주소로 시험하려면 화면에서 고치면 된다.
+  final _baseUrl = TextEditingController(text: kBackendBaseUrl);
   final _phone = TextEditingController(text: '010-1234-5678');
   final _code = TextEditingController();
 

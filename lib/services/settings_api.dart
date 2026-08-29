@@ -320,6 +320,49 @@ class SettingsApi {
 
   /// multipart 파일 업로드용 전송. JSON 전용인 [_send] 와 달리 파일을 실어 보낸다.
   /// access 토큰 만료(401)면 한 번 재발급 후 재시도한다(요청을 새로 만들어 파일을 다시 읽음).
+  // ── 이미지 업로드 ──────────────────────────────────
+  /// 사진 1장 업로드 → 서버가 돌려주는 URL.
+  ///
+  /// userId 를 주면 그 어르신 폴더에 저장된다. 프로필 사진처럼 주인이 되는
+  /// 어르신이 없을 때만 생략한다. 파일 이름은 서버가 확장자로 이미지 종류를
+  /// 가리므로 고르면서 받은 원본 이름을 그대로 넘긴다.
+  Future<String> uploadImage({
+    required Uint8List bytes,
+    required String filename,
+    int? userId,
+  }) async {
+    final d = await _sendMultipartBytes(
+      '/files/images',
+      field: 'file',
+      bytes: bytes,
+      filename: filename,
+      fields: userId == null ? null : {'userId': '$userId'},
+    );
+    return (d as Map<String, dynamic>)['imageUrl'] as String;
+  }
+
+  // ── 추억 ───────────────────────────────────────────
+  /// 추억 등록. imageUrl 은 uploadImage 가 돌려준 값을 그대로 넣는다.
+  Future<void> createMemory({
+    required int userId,
+    required String imageUrl,
+    required String title,
+    String? period,
+    String? description,
+  }) async {
+    await _send(
+      'POST',
+      '/users/$userId/memories',
+      body: {
+        'imageUrl': imageUrl,
+        'title': title,
+        if (period != null && period.isNotEmpty) 'period': period,
+        if (description != null && description.isNotEmpty)
+          'description': description,
+      },
+    );
+  }
+
   Future<dynamic> _sendMultipart(
     String path, {
     required String field,

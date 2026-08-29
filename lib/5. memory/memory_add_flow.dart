@@ -8,6 +8,7 @@ import '../4. home/home_and_alert_center.dart';
 import '../6. chat/family_chat_screen.dart';
 import '../9. set/settings_flow.dart';
 import '../services/session_store.dart';
+import '../services/settings_api.dart';
 
 const Color _bg = Color(0xFFFBF6EE);
 const Color _brown = Color(0xFF936249);
@@ -24,12 +25,46 @@ class MemoryAddFlow extends StatefulWidget {
   State<MemoryAddFlow> createState() => _MemoryAddFlowState();
 }
 
+/// 입력 화면이 모아 넘겨주는 값. 저장은 흐름(Flow) 쪽에서 한다.
+typedef MemorySubmit =
+    Future<void> Function({
+      required Uint8List photo,
+      required String filename,
+      required String title,
+      required String period,
+      required String description,
+    });
+
 class _MemoryAddFlowState extends State<MemoryAddFlow> {
+  final SettingsApi _api = SettingsApi();
   bool _saved = false;
 
-  void _saveMemory() {
-    FocusManager.instance.primaryFocus?.unfocus();
-    setState(() => _saved = true);
+  /// 사진을 먼저 올리고, 받은 URL 로 추억을 등록한다.
+  /// 실패하면 예외를 그대로 올려 입력 화면이 사유를 보여주게 한다.
+  Future<void> _saveMemory({
+    required Uint8List photo,
+    required String filename,
+    required String title,
+    required String period,
+    required String description,
+  }) async {
+    final user = (await _api.myProfile()).mainUser;
+    if (user == null) {
+      throw ApiException('연결된 어르신이 없어요. 가족 연결을 먼저 마쳐주세요.', 400);
+    }
+    final imageUrl = await _api.uploadImage(
+      bytes: photo,
+      filename: filename,
+      userId: user.userId,
+    );
+    await _api.createMemory(
+      userId: user.userId,
+      imageUrl: imageUrl,
+      title: title,
+      period: period,
+      description: description,
+    );
+    if (mounted) setState(() => _saved = true);
   }
 
   void _backToForm() {
@@ -54,7 +89,7 @@ class _MemoryAddFlowState extends State<MemoryAddFlow> {
 class MemoryAddScreen extends StatefulWidget {
   const MemoryAddScreen({super.key, required this.onSave});
 
-  final VoidCallback onSave;
+  final MemorySubmit onSave;
 
   @override
   State<MemoryAddScreen> createState() => _MemoryAddScreenState();
@@ -64,7 +99,9 @@ class _MemoryAddScreenState extends State<MemoryAddScreen> {
   final TextEditingController _titleController = TextEditingController();
   final TextEditingController _storyController = TextEditingController();
   Uint8List? _selectedPhoto;
+  String _selectedPhotoName = '';
   int _selectedWhen = 0;
+  bool _busy = false;
 
   final List<String> _whenOptions = ['오늘', '최근', '몇 년 전', '오래된 추억'];
 
@@ -80,7 +117,52 @@ class _MemoryAddScreenState extends State<MemoryAddScreen> {
     if (picked == null) return;
     final bytes = await picked.readAsBytes();
     if (!mounted) return;
-    setState(() => _selectedPhoto = bytes);
+    setState(() {
+      _selectedPhoto = bytes;
+      _selectedPhotoName = picked.name;
+    });
+  }
+
+  void _snack(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg), behavior: SnackBarBehavior.floating),
+    );
+  }
+
+  /// 저장 버튼. 사진과 제목은 서버에서도 필수라 올리기 전에 먼저 확인한다.
+  Future<void> _submit() async {
+    if (_busy) return;
+    FocusManager.instance.primaryFocus?.unfocus();
+
+    final photo = _selectedPhoto;
+    if (photo == null) {
+      _snack('사진을 한 장 골라주세요.');
+      return;
+    }
+    final title = _titleController.text.trim();
+    if (title.isEmpty) {
+      _snack('한 줄 제목을 적어주세요.');
+      return;
+    }
+
+    setState(() => _busy = true);
+    try {
+      await widget.onSave(
+        photo: photo,
+        filename: _selectedPhotoName,
+        title: title,
+        period: _whenOptions[_selectedWhen],
+        description: _storyController.text.trim(),
+      );
+    } on ApiException catch (e) {
+      _snack(e.message);
+    } catch (_) {
+      _snack('저장하지 못했어요. 잠시 후 다시 시도해 주세요.');
+    } finally {
+      // 성공하면 이 화면이 사라지므로 mounted 를 확인한다.
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   @override
@@ -93,7 +175,11 @@ class _MemoryAddScreenState extends State<MemoryAddScreen> {
           child: Column(
             children: [
               SizedBox(height: 10.h),
-              _Header(title: '새 추억', actionText: '저장', onAction: widget.onSave),
+              _Header(
+                title: '새 추억',
+                actionText: _busy ? '저장 중…' : '저장',
+                onAction: _busy ? null : _submit,
+              ),
               SizedBox(height: 14.h),
               Expanded(
                 child: SingleChildScrollView(
