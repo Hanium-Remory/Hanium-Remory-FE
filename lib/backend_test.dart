@@ -79,6 +79,19 @@ class _HomePageState extends State<HomePage> {
     return (decoded['data'] as Map<String, dynamic>? ) ?? <String, dynamic>{};
   }
 
+  /// 인증이 필요한 조회. 발급받은 access 토큰이 실제로 통하는지 보는 용도다.
+  Future<Map<String, dynamic>> _get(String path, {String? bearer}) async {
+    final headers = <String, String>{};
+    if (bearer != null) headers['Authorization'] = 'Bearer $bearer';
+    final res = await http.get(_url(path), headers: headers);
+    final decoded = jsonDecode(res.body) as Map<String, dynamic>;
+    _append('◀ $path  [${res.statusCode}] ${decoded['message'] ?? ''}');
+    if (res.statusCode >= 400) {
+      throw Exception('$path 실패: ${decoded['message'] ?? res.body}');
+    }
+    return (decoded['data'] as Map<String, dynamic>?) ?? <String, dynamic>{};
+  }
+
   Future<void> _guard(Future<void> Function() action) async {
     if (_busy) return;
     setState(() => _busy = true);
@@ -211,7 +224,17 @@ class _HomePageState extends State<HomePage> {
         setState(() {});
       });
 
-  // ── 5) 토큰 재발급 ────────────────────────────────
+  // ── 5) access 토큰 확인 ───────────────────────────
+  /// 발급받은 access 토큰으로 보호된 엔드포인트를 한 번 불러 본다.
+  /// 토큰이 만료됐거나 잘못되면 여기서 401 이 뜬다.
+  Future<void> _whoAmI() => _guard(() async {
+        if (_accessToken == null) throw Exception('accessToken이 없습니다.');
+        final data = await _get('/protectors/me', bearer: _accessToken);
+        _append('👤 protectorId=${data['protectorId']} '
+            'name=${data['name']} phone=${data['phoneNumber'] ?? '-'}');
+      });
+
+  // ── 6) 토큰 재발급 ────────────────────────────────
   Future<void> _refresh() => _guard(() async {
         if (_refreshToken == null) throw Exception('refreshToken이 없습니다.');
         final data = await _post('/auth/token/refresh', {
@@ -277,7 +300,11 @@ class _HomePageState extends State<HomePage> {
                   FilledButton(onPressed: _busy ? null : _verifyCode, child: const Text('1. 인증확인')),
                   FilledButton(onPressed: _busy || !canRegister ? null : _register, child: const Text('2. 패스키 등록')),
                   FilledButton(onPressed: _busy ? null : _login, child: const Text('3. 로그인')),
-                  OutlinedButton(onPressed: _busy ? null : _refresh, child: const Text('4. 토큰재발급')),
+                  FilledButton(
+                    onPressed: _busy || _accessToken == null ? null : _whoAmI,
+                    child: const Text('4. 내 정보'),
+                  ),
+                  OutlinedButton(onPressed: _busy ? null : _refresh, child: const Text('5. 토큰재발급')),
                 ],
               ),
               const Divider(height: 24),
