@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
-import '../4. home/home_and_alert_center.dart';
+import '../4. home/home_and_alert_center.dart' show emotionHeightOf;
+import '../main_shell.dart';
 import '../services/settings_api.dart';
 
 const Color _bg = Color(0xFFFBF6EE);
@@ -28,6 +29,13 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
   bool _loading = true;
   String? _error;
 
+  /// 0 이 가장 최근. 1 씩 늘릴수록 이전 리포트를 본다.
+  int _offset = 0;
+  int? _userId;
+
+  /// 날짜 이동 중. 화면 전체를 로딩으로 갈아치우지 않으려고 따로 둔다.
+  bool _stepping = false;
+
   @override
   void initState() {
     super.initState();
@@ -44,7 +52,8 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
         });
         return;
       }
-      final report = await _api.dailyReport(user.userId);
+      _userId = user.userId;
+      final report = await _api.dailyReport(user.userId, offset: _offset);
       // 감정 흐름은 리포트에 없어서 홈이 주는 감정 기록을 그대로 쓴다.
       final home = await _api.home(user.userId);
       if (!mounted) return;
@@ -63,6 +72,39 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
       if (mounted) {
         setState(() { _loading = false; _error = '리포트를 불러오지 못했어요.'; });
       }
+    }
+  }
+
+  /// 한 칸 이전(delta 1)/이후(delta -1) 리포트로 옮긴다.
+  /// 더 없으면 알려주기만 하고 현재 화면을 유지한다.
+  Future<void> _step(int delta) async {
+    final userId = _userId;
+    if (userId == null || _stepping) return;
+    final next = _offset + delta;
+    if (next < 0) return;
+
+    setState(() => _stepping = true);
+    try {
+      final report = await _api.dailyReport(userId, offset: next);
+      if (!mounted) return;
+      if (report == null) {
+        setState(() => _stepping = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('더 이전 리포트가 없어요.')),
+        );
+        return;
+      }
+      setState(() {
+        _offset = next;
+        _report = report;
+        _stepping = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _stepping = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('리포트를 불러오지 못했어요: $e')));
     }
   }
 
@@ -103,7 +145,14 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
         children: [
           SizedBox(height: 12.h),
           // 만들어진 시각이 아니라 '어느 날의 요약인지' 를 보여준다.
-          _Header(name: _name, at: report?.reportDate ?? report?.createdAt),
+          _Header(
+            name: _name,
+            at: report?.reportDate ?? report?.createdAt,
+            onOlder: () => _step(1),
+            onNewer: () => _step(-1),
+            canGoNewer: _offset > 0,
+            isLatest: _offset == 0,
+          ),
           SizedBox(height: 10.h),
           Expanded(
             child: report == null
@@ -153,6 +202,327 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
   }
 }
 
+/// 주간 리포트. 데일리 화면 헤더의 '주간' 에서 들어온다.
+class WeeklyReportScreen extends StatefulWidget {
+  const WeeklyReportScreen({super.key});
+
+  @override
+  State<WeeklyReportScreen> createState() => _WeeklyReportScreenState();
+}
+
+class _WeeklyReportScreenState extends State<WeeklyReportScreen> {
+  final SettingsApi _api = SettingsApi();
+
+  String _name = '';
+  WeeklyReportData? _report;
+  bool _loading = true;
+  String? _error;
+
+  /// 0 이 가장 최근 주. 1 씩 늘릴수록 이전 주를 본다.
+  int _offset = 0;
+  int? _userId;
+  bool _stepping = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final user = (await _api.myProfile()).mainUser;
+      if (user == null) {
+        setState(() {
+          _loading = false;
+          _error = '연결된 어르신이 없어요.\n가족 연결을 먼저 마쳐주세요.';
+        });
+        return;
+      }
+      _userId = user.userId;
+      final report = await _api.weeklyReport(user.userId, offset: _offset);
+      if (!mounted) return;
+      setState(() {
+        _name = user.name;
+        _report = report;
+        _loading = false;
+      });
+    } on ApiException catch (e) {
+      if (mounted) setState(() { _loading = false; _error = e.message; });
+    } catch (_) {
+      if (mounted) {
+        setState(() { _loading = false; _error = '리포트를 불러오지 못했어요.'; });
+      }
+    }
+  }
+
+  /// 한 칸 이전(delta 1)/이후(delta -1) 주로 옮긴다.
+  Future<void> _step(int delta) async {
+    final userId = _userId;
+    if (userId == null || _stepping) return;
+    final next = _offset + delta;
+    if (next < 0) return;
+
+    setState(() => _stepping = true);
+    try {
+      final report = await _api.weeklyReport(userId, offset: next);
+      if (!mounted) return;
+      if (report == null) {
+        setState(() => _stepping = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('더 이전 주간 리포트가 없어요.')),
+        );
+        return;
+      }
+      setState(() {
+        _offset = next;
+        _report = report;
+        _stepping = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _stepping = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('리포트를 불러오지 못했어요: $e')));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const _PhoneFrame(
+        child: Center(child: CircularProgressIndicator(color: _brown)),
+      );
+    }
+    if (_error != null) {
+      return _PhoneFrame(
+        child: Center(
+          child: Padding(
+            padding: EdgeInsets.symmetric(horizontal: 32.w),
+            child: Text(
+              _error!,
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 13.sp, height: 1.5, color: _muted),
+            ),
+          ),
+        ),
+      );
+    }
+
+    final report = _report;
+    return _PhoneFrame(
+      child: Column(
+        children: [
+          SizedBox(height: 12.h),
+          _WeeklyHeader(
+            name: _name,
+            at: report?.createdAt,
+            onOlder: () => _step(1),
+            onNewer: () => _step(-1),
+            canGoNewer: _offset > 0,
+            isLatest: _offset == 0,
+          ),
+          SizedBox(height: 10.h),
+          Expanded(
+            child: report == null
+                ? Center(
+                    child: Text(
+                      '아직 주간 리포트가 준비되지 않았어요.\n일주일이 모이면 만들어져요.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 13.sp,
+                        height: 1.5,
+                        color: _muted,
+                      ),
+                    ),
+                  )
+                : ListView(
+                    physics: const BouncingScrollPhysics(),
+                    padding: EdgeInsets.only(bottom: 14.h),
+                    children: [
+                      _WeeklySummaryCard(name: _name, report: report),
+                      SizedBox(height: 14.h),
+                      Text('이번 주 기록', style: _sectionTitle()),
+                      SizedBox(height: 8.h),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _ScoreBox(
+                              title: '전체 대화',
+                              value: '${report.totalConversationCount}번',
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: _ScoreBox(
+                              title: '가족 소통',
+                              value: '${report.familyInteractionCount}번',
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: _ScoreBox(
+                              title: '긴급 알림',
+                              value: '${report.emergencyAlertCount}번',
+                            ),
+                          ),
+                        ],
+                      ),
+                      SizedBox(height: 14.h),
+                      Text('감정', style: _sectionTitle()),
+                      SizedBox(height: 8.h),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(16),
+                        decoration: _cardDecoration(),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              report.dominantEmotion ?? '기록된 감정이 아직 없어요.',
+                              style: const TextStyle(
+                                fontSize: 15,
+                                color: _dark,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            if (report.avgEmotionScore != null) ...[
+                              SizedBox(height: 8.h),
+                              Text(
+                                '평균 감정 점수 ${report.avgEmotionScore}점',
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  color: _muted,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+          ),
+          const _HomeIndicator(),
+        ],
+      ),
+    );
+  }
+}
+
+class _WeeklyHeader extends StatelessWidget {
+  const _WeeklyHeader({
+    required this.name,
+    this.at,
+    required this.onOlder,
+    required this.onNewer,
+    required this.canGoNewer,
+    required this.isLatest,
+  });
+
+  final String name;
+  final DateTime? at;
+  final VoidCallback onOlder;
+  final VoidCallback onNewer;
+  final bool canGoNewer;
+  final bool isLatest;
+
+  static const double _sideWidth = 44;
+
+  @override
+  Widget build(BuildContext context) {
+    // 서버가 주 시작일을 주지 않아 만들어진 날짜를 그대로 보여준다.
+    final dateText = at == null ? '' : '${at!.month}월 ${at!.day}일 기준';
+
+    return Row(
+      children: [
+        SizedBox(
+          width: _sideWidth,
+          child: IconButton(
+            tooltip: '뒤로 가기',
+            onPressed: () => Navigator.maybePop(context),
+            icon: const Icon(Icons.chevron_left, size: 28, color: _dark),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+          ),
+        ),
+        Expanded(
+          child: Column(
+            children: [
+              Text(
+                isLatest ? '이번 주 $name님' : '$name님의 주간 리포트',
+                style: const TextStyle(
+                  fontSize: 16,
+                  color: _dark,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 1),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  _StepArrow(
+                    icon: Icons.chevron_left,
+                    tooltip: '이전 주',
+                    onTap: onOlder,
+                  ),
+                  Text(
+                    dateText,
+                    style: const TextStyle(
+                      fontSize: 9,
+                      color: _muted,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  _StepArrow(
+                    icon: Icons.chevron_right,
+                    tooltip: '다음 주',
+                    onTap: canGoNewer ? onNewer : null,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: _sideWidth),
+      ],
+    );
+  }
+}
+
+class _WeeklySummaryCard extends StatelessWidget {
+  const _WeeklySummaryCard({required this.name, required this.report});
+
+  final String name;
+  final WeeklyReportData report;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: _cardDecoration(color: const Color(0xFFFFF4D8)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _Pill(text: '이번 주 요약', color: Colors.white.withValues(alpha: 0.8)),
+          SizedBox(height: 12.h),
+          Text(
+            report.weeklySummary ?? '이번 주 $name님의 요약이 아직 없어요.',
+            style: const TextStyle(
+              fontSize: 18,
+              height: 1.28,
+              color: _dark,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _PhoneFrame extends StatelessWidget {
   const _PhoneFrame({required this.child});
 
@@ -178,57 +548,131 @@ class _PhoneFrame extends StatelessWidget {
 }
 
 class _Header extends StatelessWidget {
-  const _Header({required this.name, this.at});
+  const _Header({
+    required this.name,
+    this.at,
+    required this.onOlder,
+    required this.onNewer,
+    required this.canGoNewer,
+    required this.isLatest,
+  });
 
   final String name;
   final DateTime? at;
+
+  /// 하루 전 리포트로.
+  final VoidCallback onOlder;
+
+  /// 하루 뒤 리포트로. 가장 최근이면 막힌다.
+  final VoidCallback onNewer;
+  final bool canGoNewer;
+
+  /// 가장 최근 리포트인지(제목 문구가 달라진다).
+  final bool isLatest;
 
   static const List<String> _weekdays = [
     '월요일', '화요일', '수요일', '목요일', '금요일', '토요일', '일요일',
   ];
 
+  /// 좌우 버튼 폭. 가운데 제목이 실제로 화면 중앙에 오도록 맞춘다.
+  static const double _sideWidth = 44;
+
   @override
   Widget build(BuildContext context) {
     final day = at ?? DateTime.now();
     final dateText = '${day.month}월 ${day.day}일 (${_weekdays[day.weekday - 1]})';
+
     return Row(
       children: [
-        IconButton(
-          tooltip: '뒤로 가기',
-          onPressed: () =>
-              Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
-                MaterialPageRoute(builder: (_) => const HomeAndAlertPreview()),
-                (_) => false,
-              ),
-          icon: const Icon(Icons.chevron_left, size: 28, color: _dark),
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+        SizedBox(
+          width: _sideWidth,
+          child: IconButton(
+            tooltip: '뒤로 가기',
+            onPressed: () =>
+                Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
+                  MaterialPageRoute(builder: (_) => const MainShell()),
+                  (_) => false,
+                ),
+            icon: const Icon(Icons.chevron_left, size: 28, color: _dark),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+          ),
         ),
         Expanded(
           child: Column(
             children: [
               Text(
-                '오늘의 $name님',
+                isLatest ? '오늘의 $name님' : '$name님의 리포트',
                 style: const TextStyle(
                   fontSize: 16,
                   color: _dark,
                   fontWeight: FontWeight.w900,
                 ),
               ),
-              const SizedBox(height: 3),
-              Text(
-                dateText,
-                style: const TextStyle(
-                  fontSize: 9,
-                  color: _muted,
-                  fontWeight: FontWeight.w700,
-                ),
+              const SizedBox(height: 1),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  _StepArrow(
+                    icon: Icons.chevron_left,
+                    tooltip: '이전 리포트',
+                    onTap: onOlder,
+                  ),
+                  Text(
+                    dateText,
+                    style: const TextStyle(
+                      fontSize: 9,
+                      color: _muted,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  _StepArrow(
+                    icon: Icons.chevron_right,
+                    tooltip: '다음 리포트',
+                    onTap: canGoNewer ? onNewer : null,
+                  ),
+                ],
               ),
             ],
           ),
         ),
-        Text('주간', style: _smallBrown()),
+        SizedBox(
+          width: _sideWidth,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const WeeklyReportScreen()),
+            ),
+            child: Center(child: Text('주간', style: _smallBrown())),
+          ),
+        ),
       ],
+    );
+  }
+}
+
+/// 날짜를 한 칸씩 옮기는 작은 화살표. onTap 이 null 이면 흐리게 보인다.
+class _StepArrow extends StatelessWidget {
+  const _StepArrow({
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      tooltip: tooltip,
+      onPressed: onTap,
+      icon: Icon(icon, size: 18, color: onTap == null ? _line : _muted),
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints(minWidth: 28, minHeight: 24),
+      visualDensity: VisualDensity.compact,
     );
   }
 }
