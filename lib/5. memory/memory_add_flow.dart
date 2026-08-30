@@ -4,10 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:image_picker/image_picker.dart';
 
-import '../4. home/home_and_alert_center.dart';
-import '../6. chat/family_chat_screen.dart';
-import '../9. set/settings_flow.dart';
 import '../services/session_store.dart';
+import '../main_shell.dart';
 import '../services/settings_api.dart';
 
 const Color _bg = Color(0xFFFBF6EE);
@@ -90,10 +88,7 @@ class _MemoryAddFlowState extends State<MemoryAddFlow> {
   }
 
   void _goHome() {
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (_) => const HomeAndAlertPreview()),
-    );
+    MainShellScope.maybeOf(context)?.selectTab(AppTab.home);
   }
 
   @override
@@ -253,8 +248,6 @@ class _MemoryAddScreenState extends State<MemoryAddScreen> {
                   ),
                 ),
               ),
-              const _MemoryNavBar(),
-              SizedBox(height: 8.h),
             ],
           ),
         ),
@@ -370,13 +363,7 @@ class _Header extends StatelessWidget {
             tooltip: '뒤로 가기',
             onPressed:
                 onBack ??
-                () => Navigator.of(context, rootNavigator: true)
-                    .pushAndRemoveUntil(
-                      MaterialPageRoute(
-                        builder: (_) => const HomeAndAlertPreview(),
-                      ),
-                      (_) => false,
-                    ),
+                () => MainShellScope.maybeOf(context)?.selectTab(AppTab.home),
             icon: Icon(Icons.chevron_left, size: 28.sp, color: _dark),
             padding: EdgeInsets.zero,
             constraints: BoxConstraints(minWidth: 44.w, minHeight: 40.h),
@@ -660,93 +647,6 @@ class _SuccessMark extends StatelessWidget {
             ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _MemoryNavBar extends StatelessWidget {
-  const _MemoryNavBar();
-
-  void _openTab(BuildContext context, String label) {
-    final Widget? screen = switch (label) {
-      '홈' => const HomeAndAlertPreview(),
-      '대화' => const FamilyChatScreen(),
-      '설정' => const SettingsFlow(),
-      _ => null,
-    };
-
-    if (screen == null) return;
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (_) => screen),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final items = [
-      (Icons.home_outlined, '홈', false),
-      (Icons.chat_bubble_outline, '대화', false),
-      (Icons.image_outlined, '추억', true),
-      (Icons.settings_outlined, '설정', false),
-    ];
-
-    return Container(
-      height: 72.h,
-      padding: EdgeInsets.symmetric(horizontal: 18.w),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(22.r),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.08),
-            blurRadius: 18,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          for (final item in items)
-            InkWell(
-              onTap: item.$3 ? null : () => _openTab(context, item.$2),
-              borderRadius: BorderRadius.circular(14.r),
-              child: SizedBox(
-                width: 58.w,
-                height: 62.h,
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      item.$1,
-                      size: 22.sp,
-                      color: item.$3 ? _yellow : _muted,
-                    ),
-                    SizedBox(height: 3.h),
-                    Text(
-                      item.$2,
-                      style: TextStyle(
-                        fontSize: 10.sp,
-                        color: item.$3 ? _brown : _muted,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    SizedBox(height: 2.h),
-                    Container(
-                      width: 4.w,
-                      height: 4.w,
-                      decoration: BoxDecoration(
-                        color: item.$3 ? _yellow : Colors.transparent,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-        ],
       ),
     );
   }

@@ -3,11 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
-import '../5. memory/memory_add_flow.dart';
-import '../6. chat/family_chat_screen.dart';
 import '../7. report/daily_report_screen.dart';
 import '../8. vocie/voice_record_flow.dart';
-import '../9. set/settings_flow.dart';
+import '../main_shell.dart';
 import '../services/settings_api.dart';
 
 const Color _bg = Color(0xFFFBF6EE);
@@ -184,8 +182,6 @@ class _HomeScreenState extends State<HomeScreen> {
                     hasUnread: summary.unreadNotificationCount > 0,
                   ),
                   SizedBox(height: 12.h),
-                  const _KoreanDateTimeText(),
-                  SizedBox(height: 4.h),
                   Text('오늘 $name님은 잘 지내고 계세요', style: _headline()),
                   SizedBox(height: 12.h),
                   _StatusCard(name: name, device: summary.device),
@@ -204,14 +200,10 @@ class _HomeScreenState extends State<HomeScreen> {
                           icon: Icons.image_outlined,
                           color: _brown,
                           textColor: Colors.white,
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const MemoryAddFlow(),
-                              ),
-                            );
-                          },
+                          // 탭으로 옮긴다. 라우트로 밀면 네비바가 가려진다.
+                          onTap: () => MainShellScope.maybeOf(
+                            context,
+                          )?.selectTab(AppTab.memory),
                         ),
                       ),
                       const SizedBox(width: 10),
@@ -249,14 +241,9 @@ class _HomeScreenState extends State<HomeScreen> {
                           badge: summary.unreadChatCount > 0
                               ? '${summary.unreadChatCount}'
                               : null,
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const FamilyChatScreen(),
-                              ),
-                            );
-                          },
+                          onTap: () => MainShellScope.maybeOf(
+                            context,
+                          )?.selectTab(AppTab.chat),
                         ),
                       ),
                       const SizedBox(width: 10),
@@ -304,8 +291,6 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
           ),
-          const _HomeNavBar(),
-          SizedBox(height: 8.h),
         ],
       ),
     );
@@ -502,46 +487,6 @@ class _PhoneFrame extends StatelessWidget {
   }
 }
 
-class _KoreanDateTimeText extends StatefulWidget {
-  const _KoreanDateTimeText();
-
-  @override
-  State<_KoreanDateTimeText> createState() => _KoreanDateTimeTextState();
-}
-
-class _KoreanDateTimeTextState extends State<_KoreanDateTimeText> {
-  late DateTime _now = _koreanNow();
-  Timer? _timer;
-
-  static DateTime _koreanNow() =>
-      DateTime.now().toUtc().add(const Duration(hours: 9));
-
-  @override
-  void initState() {
-    super.initState();
-    _timer = Timer.periodic(const Duration(seconds: 30), (_) {
-      if (mounted) setState(() => _now = _koreanNow());
-    });
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final period = _now.hour < 12 ? '오전' : '오후';
-    final hour = _now.hour % 12 == 0 ? 12 : _now.hour % 12;
-    final minute = _now.minute.toString().padLeft(2, '0');
-    return Text(
-      '${_now.month}월 ${_now.day}일 $period $hour시 $minute분',
-      style: _caption(),
-    );
-  }
-}
-
 class _TopBar extends StatelessWidget {
   const _TopBar({required this.onOpenAlerts, required this.hasUnread});
 
@@ -550,14 +495,8 @@ class _TopBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final now = DateTime.now();
-    final hour = now.hour % 12 == 0 ? 12 : now.hour % 12;
     return Row(
       children: [
-        Text(
-          '$hour:${now.minute.toString().padLeft(2, '0')}',
-          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
-        ),
         const Spacer(),
         GestureDetector(
           onTap: onOpenAlerts,
@@ -913,76 +852,6 @@ class _TimelineItem extends StatelessWidget {
             ),
           ),
           Text(time, textAlign: TextAlign.right, style: _tiny()),
-        ],
-      ),
-    );
-  }
-}
-
-class _HomeNavBar extends StatelessWidget {
-  const _HomeNavBar();
-
-  @override
-  Widget build(BuildContext context) {
-    final items = [
-      (Icons.home_outlined, '홈', true),
-      (Icons.chat_bubble_outline, '대화', false),
-      (Icons.image_outlined, '추억', false),
-      (Icons.settings_outlined, '설정', false),
-    ];
-
-    return Container(
-      height: 62,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      decoration: _cardDecoration(shadow: true),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          for (final item in items)
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () {
-                if (item.$2 == '대화') {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const FamilyChatScreen()),
-                  );
-                }
-
-                if (item.$2 == '추억') {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const MemoryAddFlow()),
-                  );
-                }
-
-                if (item.$2 == '설정') {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const SettingsFlow()),
-                  );
-                }
-              },
-              child: SizedBox(
-                width: 52,
-                height: 54,
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(item.$1, size: 20, color: item.$3 ? _yellow : _muted),
-                    const SizedBox(height: 2),
-                    Text(
-                      item.$2,
-                      style: TextStyle(
-                        fontSize: 9,
-                        color: item.$3 ? _brown : _muted,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
         ],
       ),
     );

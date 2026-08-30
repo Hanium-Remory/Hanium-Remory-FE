@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
-import '../4. home/home_and_alert_center.dart';
+import '../main_shell.dart';
 import '../services/settings_api.dart';
 
 const Color _background = Color(0xFFFBF6EE);
@@ -65,7 +65,7 @@ class _InviteCodeInputScreenState extends State<InviteCodeInputScreen> {
       }
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => const HomeAndAlertPreview()),
+        MaterialPageRoute(builder: (_) => const MainShell()),
       );
     } on ApiException catch (e) {
       _snack(e.message);

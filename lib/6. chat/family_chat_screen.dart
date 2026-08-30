@@ -4,9 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:image_picker/image_picker.dart';
 
-import '../4. home/home_and_alert_center.dart';
-import '../5. memory/memory_add_flow.dart';
-import '../9. set/settings_flow.dart';
+import '../main_shell.dart';
 import '../services/session_store.dart';
 import '../services/settings_api.dart';
 
@@ -15,7 +13,6 @@ const Color _brown = Color(0xFF936249);
 const Color _dark = Color(0xFF2F2521);
 const Color _muted = Color(0xFF7C6B61);
 const Color _line = Color(0xFFE8DCD2);
-const Color _yellow = Color(0xFFF6C43D);
 
 class FamilyChatScreen extends StatefulWidget {
   const FamilyChatScreen({super.key});
@@ -44,6 +41,9 @@ class _FamilyChatScreenState extends State<FamilyChatScreen> {
   int? _myProtectorId;
   String _elderInitial = '';
   final Map<int, String> _memberInitials = {};
+
+  /// 대화방에 연결된 가족 수. 1명(나뿐)이면 헤더 배지를 숨긴다.
+  int _familyCount = 0;
 
   @override
   void initState() {
@@ -80,9 +80,11 @@ class _FamilyChatScreenState extends State<FamilyChatScreen> {
 
       try {
         final family = await _api.familyMembers(user.userId);
+        _familyCount = family.members.length;
         for (final m in family.members) {
-          _memberInitials[m.protectorId] =
-              m.name.isEmpty ? '' : m.name.substring(0, 1);
+          _memberInitials[m.protectorId] = m.name.isEmpty
+              ? ''
+              : m.name.substring(0, 1);
         }
       } catch (_) {
         // 이름을 못 받아도 '가족' 으로 보여주면 된다.
@@ -93,10 +95,18 @@ class _FamilyChatScreenState extends State<FamilyChatScreen> {
       setState(() => _loading = false);
       _poll = Timer.periodic(_pollInterval, (_) => _refresh());
     } on ApiException catch (e) {
-      if (mounted) setState(() { _loading = false; _error = e.message; });
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _error = e.message;
+        });
+      }
     } catch (_) {
       if (mounted) {
-        setState(() { _loading = false; _error = '대화를 불러오지 못했어요.'; });
+        setState(() {
+          _loading = false;
+          _error = '대화를 불러오지 못했어요.';
+        });
       }
     }
   }
@@ -275,25 +285,43 @@ class _FamilyChatScreenState extends State<FamilyChatScreen> {
     );
   }
 
+  /// 시스템 뒤로 가기(안드로이드 뒤로 버튼·엣지 스와이프)도 헤더 화살표와
+  /// 똑같이 홈 탭으로 보낸다. 그냥 두면 앱이 닫혀 버린다.
+  bool _goHome(BuildContext context) {
+    final shell = MainShellScope.maybeOf(context);
+    if (shell == null) return false;
+    shell.selectTab(AppTab.home);
+    return true;
+  }
+
   @override
   Widget build(BuildContext context) {
-    return _PhoneFrame(
-      child: Column(
-        children: [
-          SizedBox(height: 12.h),
-          const _Header(),
-          SizedBox(height: 12.h),
-          Expanded(child: _buildMessages()),
-          _InputBar(
-            controller: _messageController,
-            canSend: _hasText && !_sending && _userId != null,
-            onSend: _sendMessage,
-            onPhoto: _pickAndSendPhoto,
-          ),
-          const SizedBox(height: 10),
-          const _ChatNavBar(),
-          SizedBox(height: 8.h),
-        ],
+    return PopScope(
+      canPop: MainShellScope.maybeOf(context) == null,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _goHome(context);
+      },
+      child: _PhoneFrame(
+        child: Column(
+          children: [
+            SizedBox(height: 10.h),
+            _Header(
+              initials: _memberInitials.values
+                  .where((e) => e.isNotEmpty)
+                  .toList(),
+              count: _familyCount,
+            ),
+            SizedBox(height: 14.h),
+            Expanded(child: _buildMessages()),
+            _InputBar(
+              controller: _messageController,
+              canSend: _hasText && !_sending && _userId != null,
+              onSend: _sendMessage,
+              onPhoto: _pickAndSendPhoto,
+            ),
+            const SizedBox(height: 10),
+          ],
+        ),
       ),
     );
   }
@@ -313,7 +341,7 @@ class _PhoneFrame extends StatelessWidget {
           constraints: const BoxConstraints(maxWidth: 402),
           child: SafeArea(
             child: Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16.w),
+              padding: EdgeInsets.symmetric(horizontal: 22.w),
               child: child,
             ),
           ),
@@ -324,47 +352,81 @@ class _PhoneFrame extends StatelessWidget {
 }
 
 class _Header extends StatelessWidget {
-  const _Header();
+  const _Header({required this.initials, required this.count});
+
+  /// 가족 구성원 이름의 첫 글자. 배지에는 앞의 세 명까지만 보인다.
+  final List<String> initials;
+
+  /// 연결된 가족 수.
+  final int count;
+
+  static const _avatarColors = [
+    Color(0xFFBD8A5F),
+    Color(0xFFD9AA22),
+    Color(0xFF5D9E41),
+  ];
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        const Text(
-          '가족 대화방',
-          style: TextStyle(
-            fontSize: 17,
-            color: _dark,
-            fontWeight: FontWeight.w900,
+    final shown = initials.take(_avatarColors.length).toList();
+
+    // 새 추억 화면 헤더와 같은 구조·위치를 쓴다.
+    return SizedBox(
+      height: 40.h,
+      child: Row(
+        children: [
+          IconButton(
+            tooltip: '뒤로 가기',
+            onPressed: () {
+              final shell = MainShellScope.maybeOf(context);
+              if (shell != null) {
+                shell.selectTab(AppTab.home);
+              } else if (Navigator.canPop(context)) {
+                Navigator.pop(context);
+              }
+            },
+            icon: Icon(Icons.chevron_left, size: 28.sp, color: _dark),
+            padding: EdgeInsets.zero,
+            constraints: BoxConstraints(minWidth: 44.w, minHeight: 40.h),
           ),
-        ),
-        const Spacer(),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(99),
-            border: Border.all(color: _line),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: const [
-              _TinyMember(color: Color(0xFFBD8A5F), label: '박'),
-              _TinyMember(color: Color(0xFFD9AA22), label: '민'),
-              _TinyMember(color: Color(0xFF5D9E41), label: '서'),
-              SizedBox(width: 3),
-              Text(
-                '4명',
-                style: TextStyle(
-                  fontSize: 9,
-                  color: _muted,
-                  fontWeight: FontWeight.w900,
-                ),
+          Expanded(
+            child: Text(
+              '가족 대화방',
+              style: TextStyle(
+                fontSize: 17.sp,
+                color: _dark,
+                fontWeight: FontWeight.w900,
               ),
-            ],
+            ),
           ),
-        ),
-      ],
+          // 아직 아무도 초대하지 않았으면(나뿐) 배지를 아예 띄우지 않는다.
+          if (count > 1)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(99),
+                border: Border.all(color: _line),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (var i = 0; i < shown.length; i++)
+                    _TinyMember(color: _avatarColors[i], label: shown[i]),
+                  const SizedBox(width: 3),
+                  Text(
+                    '$count명',
+                    style: const TextStyle(
+                      fontSize: 9,
+                      color: _muted,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
     );
   }
 }
@@ -483,7 +545,9 @@ class _ChatBubbleShell extends StatelessWidget {
                   ? CrossAxisAlignment.end
                   : CrossAxisAlignment.start,
               children: [
-                if (time.isNotEmpty)
+                // 내 메시지는 버블 오른쪽에 시간을 따로 그린다. 여기서도 그리면
+                // 같은 시간이 두 번 보인다.
+                if (!mine && time.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 4),
                     child: Text(
@@ -723,78 +787,6 @@ class _InputBar extends StatelessWidget {
               child: const Icon(Icons.near_me, color: Colors.white, size: 17),
             ),
           ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ChatNavBar extends StatelessWidget {
-  const _ChatNavBar();
-
-  @override
-  Widget build(BuildContext context) {
-    final items = [
-      (Icons.home_outlined, '홈', false),
-      (Icons.chat_bubble_outline, '대화', true),
-      (Icons.image_outlined, '추억', false),
-      (Icons.settings_outlined, '설정', false),
-    ];
-
-    return Container(
-      height: 62,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: _line),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.07),
-            blurRadius: 18,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          for (final item in items)
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () {
-                final Widget? screen = switch (item.$2) {
-                  '홈' => const HomeAndAlertPreview(),
-                  '추억' => const MemoryAddFlow(),
-                  '설정' => const SettingsFlow(),
-                  _ => null,
-                };
-                if (screen == null) return;
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(builder: (_) => screen),
-                );
-              },
-              child: SizedBox(
-                width: 52,
-                height: 54,
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(item.$1, size: 20, color: item.$3 ? _yellow : _muted),
-                    const SizedBox(height: 2),
-                    Text(
-                      item.$2,
-                      style: TextStyle(
-                        fontSize: 9,
-                        color: item.$3 ? _brown : _muted,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
         ],
       ),
     );
