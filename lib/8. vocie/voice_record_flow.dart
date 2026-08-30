@@ -1,11 +1,13 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:audioplayers/audioplayers.dart';
 import 'package:record/record.dart';
 
-import '../4. home/home_and_alert_center.dart';
+import '../main_shell.dart';
 import '../services/settings_api.dart';
 
 const Color _bg = Color(0xFFFBF6EE);
@@ -179,7 +181,7 @@ class _VoiceRecordFlowState extends State<VoiceRecordFlow> {
   void _goHome() {
     Navigator.pushReplacement(
       context,
-      MaterialPageRoute(builder: (_) => const HomeAndAlertPreview()),
+      MaterialPageRoute(builder: (_) => const MainShell()),
     );
   }
 
@@ -197,6 +199,7 @@ class _VoiceRecordFlowState extends State<VoiceRecordFlow> {
         onRetry: _restartRecording,
         onComplete: _uploadAndPoll,
         durationSeconds: _recordedSeconds,
+        audio: _recordedAudio ?? Uint8List(0),
       ),
       VoiceCompleteScreen(
         onBack: _back,
@@ -267,7 +270,7 @@ class VoiceIntroScreen extends StatelessWidget {
                           ],
                         ),
                         child: Text(
-                          '아빠! 우리 딸\n목소리네',
+                          '어머! 우리 딸\n목소리네',
                           style: TextStyle(
                             fontSize: 10.sp,
                             height: 1.35,
@@ -334,9 +337,19 @@ class VoiceRecordingScreen extends StatefulWidget {
 }
 
 class _VoiceRecordingScreenState extends State<VoiceRecordingScreen> {
+  // 스트리밍 녹음은 PCM 만 지원한다. WAV 로 요청하면 안드로이드 쪽에서
+  // "Path not provided. Stream is not supported." 로 시작부터 실패한다.
+  // 그래서 PCM 으로 받아 두고, 저장할 때 WAV 헤더를 직접 붙인다.
+  static const _sampleRate = 44100;
+  static const _numChannels = 1;
+
   final AudioRecorder _recorder = AudioRecorder();
   final BytesBuilder _audioBytes = BytesBuilder(copy: false);
   StreamSubscription<Uint8List>? _audioSubscription;
+  StreamSubscription<Amplitude>? _amplitudeSubscription;
+
+  /// 파형 막대에 쓰는 최근 입력 크기(0~1). 오래된 것부터 밀려난다.
+  final List<double> _levels = [];
   Completer<void>? _audioDone;
   Timer? _timer;
   int _seconds = 0;
@@ -364,6 +377,7 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen> {
   void dispose() {
     _timer?.cancel();
     _audioSubscription?.cancel();
+    unawaited(_amplitudeSubscription?.cancel());
     if (_isRecording) unawaited(_recorder.cancel());
     unawaited(_recorder.dispose());
     super.dispose();
@@ -379,9 +393,9 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen> {
 
       final stream = await _recorder.startStream(
         const RecordConfig(
-          encoder: AudioEncoder.wav,
-          sampleRate: 44100,
-          numChannels: 1,
+          encoder: AudioEncoder.pcm16bits,
+          sampleRate: _sampleRate,
+          numChannels: _numChannels,
         ),
       );
       _audioDone = Completer<void>();
@@ -397,6 +411,20 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen> {
       );
       if (!mounted) return;
       setState(() => _isRecording = true);
+
+      // 마이크로 들어오는 크기를 받아 파형을 실제로 움직인다.
+      _amplitudeSubscription = _recorder
+          .onAmplitudeChanged(const Duration(milliseconds: 120))
+          .listen((amplitude) {
+            if (!mounted) return;
+            // current 는 dBFS(-160~0). 사람 말소리는 대체로 -45dB 위에 걸린다.
+            final level = ((amplitude.current + 45) / 45).clamp(0.0, 1.0);
+            setState(() {
+              _levels.add(level);
+              if (_levels.length > kWaveformBars) _levels.removeAt(0);
+            });
+          });
+
       _timer = Timer.periodic(const Duration(seconds: 1), (_) {
         if (!mounted) return;
         setState(() => _seconds++);
@@ -407,10 +435,46 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen> {
     }
   }
 
+  /// 16비트 PCM 앞에 44바이트 WAV(RIFF) 헤더를 붙인다.
+  Uint8List _wavFromPcm16(Uint8List pcm) {
+    const headerSize = 44;
+    const bitsPerSample = 16;
+    final byteRate = _sampleRate * _numChannels * bitsPerSample ~/ 8;
+    final blockAlign = _numChannels * bitsPerSample ~/ 8;
+
+    final out = Uint8List(headerSize + pcm.length);
+    final view = ByteData.view(out.buffer);
+
+    void ascii(int offset, String tag) {
+      for (var i = 0; i < tag.length; i++) {
+        out[offset + i] = tag.codeUnitAt(i);
+      }
+    }
+
+    ascii(0, 'RIFF');
+    view.setUint32(4, 36 + pcm.length, Endian.little);
+    ascii(8, 'WAVE');
+    ascii(12, 'fmt ');
+    view.setUint32(16, 16, Endian.little); // fmt 청크 길이
+    view.setUint16(20, 1, Endian.little); // 1 = PCM
+    view.setUint16(22, _numChannels, Endian.little);
+    view.setUint32(24, _sampleRate, Endian.little);
+    view.setUint32(28, byteRate, Endian.little);
+    view.setUint16(32, blockAlign, Endian.little);
+    view.setUint16(34, bitsPerSample, Endian.little);
+    ascii(36, 'data');
+    view.setUint32(40, pcm.length, Endian.little);
+
+    out.setRange(headerSize, out.length, pcm);
+    return out;
+  }
+
   Future<void> _stopRecording() async {
     if (!_isRecording || _isStopping) return;
     setState(() => _isStopping = true);
     _timer?.cancel();
+    await _amplitudeSubscription?.cancel();
+    _amplitudeSubscription = null;
     try {
       await _recorder.stop();
       await _audioDone?.future.timeout(
@@ -428,7 +492,8 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen> {
         return;
       }
       _isRecording = false;
-      widget.onDone(_seconds, audio);
+      // 서버에는 .wav 로 올라간다. 헤더 없는 PCM 을 그대로 보내면 못 읽는다.
+      widget.onDone(_seconds, _wavFromPcm16(audio));
     } catch (error) {
       if (mounted) {
         setState(() {
@@ -556,7 +621,12 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen> {
               ],
               Row(
                 children: [
-                  Expanded(child: _Waveform(active: _isRecording)),
+                  Expanded(
+                    child: _Waveform(
+                      active: _isRecording,
+                      levels: _levels,
+                    ),
+                  ),
                   SizedBox(width: 10.w),
                   SizedBox(
                     height: 54.h,
@@ -605,6 +675,7 @@ class VoiceCheckScreen extends StatefulWidget {
     required this.onRetry,
     required this.onComplete,
     required this.durationSeconds,
+    required this.audio,
   });
 
   final VoidCallback onBack;
@@ -612,12 +683,57 @@ class VoiceCheckScreen extends StatefulWidget {
   final VoidCallback onComplete;
   final int durationSeconds;
 
+  /// 방금 녹음한 WAV. 여기서 그대로 재생한다.
+  final Uint8List audio;
+
   @override
   State<VoiceCheckScreen> createState() => _VoiceCheckScreenState();
 }
 
 class _VoiceCheckScreenState extends State<VoiceCheckScreen> {
+  final AudioPlayer _player = AudioPlayer();
+  StreamSubscription<void>? _completeSubscription;
   bool _isPlaying = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // 끝까지 재생되면 버튼을 다시 '재생' 으로 돌린다.
+    _completeSubscription = _player.onPlayerComplete.listen((_) {
+      if (mounted) setState(() => _isPlaying = false);
+    });
+  }
+
+  @override
+  void dispose() {
+    unawaited(_completeSubscription?.cancel());
+    unawaited(_player.dispose());
+    super.dispose();
+  }
+
+  Future<void> _togglePlay() async {
+    if (widget.audio.isEmpty) return;
+    try {
+      if (_isPlaying) {
+        await _player.pause();
+        if (mounted) setState(() => _isPlaying = false);
+        return;
+      }
+      // 멈춘 지점부터 이어 듣고, 처음이거나 끝났으면 새로 재생한다.
+      if (_player.state == PlayerState.paused) {
+        await _player.resume();
+      } else {
+        await _player.play(BytesSource(widget.audio));
+      }
+      if (mounted) setState(() => _isPlaying = true);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _isPlaying = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('재생하지 못했어요: $error')),
+      );
+    }
+  }
 
   String _time(int seconds) {
     final minutes = seconds ~/ 60;
@@ -662,7 +778,7 @@ class _VoiceCheckScreenState extends State<VoiceCheckScreen> {
                 child: Row(
                   children: [
                     GestureDetector(
-                      onTap: () => setState(() => _isPlaying = !_isPlaying),
+                      onTap: _togglePlay,
                       child: CircleAvatar(
                         radius: 24.r,
                         backgroundColor: _brown,
@@ -685,7 +801,7 @@ class _VoiceCheckScreenState extends State<VoiceCheckScreen> {
                             style: _caption(),
                           ),
                           SizedBox(height: 12.h),
-                          _Waveform(active: false),
+                          _Waveform(active: _isPlaying),
                         ],
                       ),
                     ),
@@ -706,7 +822,12 @@ class _VoiceCheckScreenState extends State<VoiceCheckScreen> {
                           borderRadius: BorderRadius.circular(8.r),
                         ),
                       ),
-                      child: const Text('다시 녹음'),
+                      child: const Text(
+                        '다시 녹음',
+                        maxLines: 1,
+                        softWrap: false,
+                        overflow: TextOverflow.visible,
+                      ),
                     ),
                   ),
                   SizedBox(width: 10.w),
@@ -872,7 +993,7 @@ class _Header extends StatelessWidget {
                 () => Navigator.of(context, rootNavigator: true)
                     .pushAndRemoveUntil(
                       MaterialPageRoute(
-                        builder: (_) => const HomeAndAlertPreview(),
+                        builder: (_) => const MainShell(),
                       ),
                       (_) => false,
                     ),
@@ -946,59 +1067,133 @@ class _TipBox extends StatelessWidget {
   }
 }
 
-class _Waveform extends StatelessWidget {
-  const _Waveform({required this.active});
+/// 파형 막대 개수. 녹음 화면이 이 개수만큼만 최근 값을 들고 있는다.
+const int kWaveformBars = 22;
 
+class _Waveform extends StatefulWidget {
+  const _Waveform({required this.active, this.levels});
+
+  /// 녹음 중이거나 재생 중이면 true.
   final bool active;
+
+  /// 0~1 로 정규화된 최근 입력 크기. 비어 있으면 스스로 움직인다.
+  final List<double>? levels;
+
+  @override
+  State<_Waveform> createState() => _WaveformState();
+}
+
+class _WaveformState extends State<_Waveform>
+    with SingleTickerProviderStateMixin {
+  /// 막대마다 다른 높이를 주기 위한 기준 높이.
+  static const List<double> _idle = [
+    16.0,
+    26.0,
+    12.0,
+    30.0,
+    20.0,
+    34.0,
+    18.0,
+    24.0,
+    38.0,
+    22.0,
+    14.0,
+    31.0,
+    20.0,
+    28.0,
+    16.0,
+    35.0,
+    21.0,
+    27.0,
+    13.0,
+    30.0,
+    18.0,
+    25.0,
+  ];
+
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 900),
+  );
+
+  /// 마이크 값이 없는데 재생 중이면 파형을 시간에 따라 흔든다.
+  bool get _shouldAnimate =>
+      widget.active && (widget.levels == null || widget.levels!.isEmpty);
+
+  @override
+  void initState() {
+    super.initState();
+    if (_shouldAnimate) _controller.repeat();
+  }
+
+  @override
+  void didUpdateWidget(covariant _Waveform oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_shouldAnimate) {
+      if (!_controller.isAnimating) _controller.repeat();
+    } else if (_controller.isAnimating) {
+      _controller.stop();
+      _controller.value = 0;
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  /// 막대를 왼쪽에서 오른쪽으로 흐르는 파도처럼 만든다.
+  double _animated(int i, double t) {
+    final wave = (math.sin((t - i * 0.06) * 2 * math.pi) + 1) / 2;
+    return 4.0 + (_idle[i] - 4.0) * (0.25 + 0.75 * wave);
+  }
 
   @override
   Widget build(BuildContext context) {
-    final bars = [
-      16.0,
-      26.0,
-      12.0,
-      30.0,
-      20.0,
-      34.0,
-      18.0,
-      24.0,
-      38.0,
-      22.0,
-      14.0,
-      31.0,
-      20.0,
-      28.0,
-      16.0,
-      35.0,
-      21.0,
-      27.0,
-      13.0,
-      30.0,
-      18.0,
-      25.0,
-    ];
+    final live = widget.levels;
+    final hasLive = live != null && live.isNotEmpty;
 
     return SizedBox(
       height: 48.h,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          for (var i = 0; i < bars.length; i++)
-            Expanded(
-              child: Align(
-                alignment: Alignment.center,
-                child: Container(
-                  width: 3.w,
-                  height: bars[i].h,
-                  margin: EdgeInsets.symmetric(horizontal: 1.w),
-                  decoration: BoxDecoration(
-                    color: active || i < 11 ? _brown : const Color(0xFFE9DED3),
-                    borderRadius: BorderRadius.circular(99.r),
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, _) {
+          // 녹음 중이면 실제 입력 크기로, 재생 중이면 파도로, 아니면 고정 막대로 그린다.
+          final bars = hasLive
+              ? [
+                  // 최근 값이 오른쪽에 오도록 왼쪽을 낮은 값으로 채운다.
+                  for (var i = 0; i < kWaveformBars - live.length; i++) 4.0,
+                  for (final level in live) 4.0 + level * 36.0,
+                ]
+              : [
+                  for (var i = 0; i < kWaveformBars; i++)
+                    _shouldAnimate ? _animated(i, _controller.value) : _idle[i],
+                ];
+
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              for (var i = 0; i < bars.length; i++)
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.center,
+                    child: Container(
+                      width: 3.w,
+                      height: bars[i].h,
+                      margin: EdgeInsets.symmetric(horizontal: 1.w),
+                      decoration: BoxDecoration(
+                        color: widget.active || i < 11
+                            ? _brown
+                            : const Color(0xFFE9DED3),
+                        borderRadius: BorderRadius.circular(99.r),
+                      ),
+                    ),
                   ),
                 ),
-              ),
-            ),
-        ],
+            ],
+          );
+        },
       ),
     );
   }
