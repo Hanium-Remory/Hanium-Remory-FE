@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
-import '../4. home/home_and_alert_center.dart';
+import '../main_shell.dart';
 import '../services/auth_api.dart';
+import '../services/firebase_phone_auth.dart';
 import '../services/session_store.dart';
 import '../services/settings_api.dart';
 
@@ -14,8 +16,15 @@ const Color _muted = Color(0xFF7C6B61);
 const Color _line = Color(0xFFE8DCD2);
 const Color _soft = Color(0xFFF5E9DF);
 
-// TODO: 백엔드 Passkey/OTP 연동이 준비되면 false로 변경한다.
+// 개발용: 패스키(Face ID) 등록을 건너뛴다. 에뮬레이터처럼 생체인증이 안 되는
+// 환경에서 Firebase SMS 인증만 따로 확인할 때 쓴다.
+// 이 모드에서는 번호 인증 후 백엔드 세션 교환도 건너뛴다. 서버가 onboarding
+// 토큰을 검증하는데 이 모드에는 진짜 토큰이 없기 때문이다.
 const bool kBypassPasskeyForDevelopment = false;
+
+/// 초대 코드 안내 문구용. 서버 설정이 어떻든 하루를 넘겨 말하지 않는다.
+Duration _atMostADay(Duration left) =>
+    left > const Duration(hours: 24) ? const Duration(hours: 24) : left;
 
 class FirstRegistrationFlow extends StatefulWidget {
   const FirstRegistrationFlow({super.key});
@@ -29,10 +38,12 @@ class _FirstRegistrationFlowState extends State<FirstRegistrationFlow> {
 
   /// 어르신을 등록하고 초대 코드를 받으면 채워진다.
   String? _inviteCode;
+  DateTime? _inviteExpiresAt;
   String _myName = '';
 
   final _api = AuthApi();
   final _settings = SettingsApi();
+  final _phoneAuth = FirebasePhoneAuth();
   bool _busy = false;
   String _busyMsg = '';
   String? _onboardingToken; // Face ID 등록 후 발급, 번호 연결에 사용
@@ -54,7 +65,7 @@ class _FirstRegistrationFlowState extends State<FirstRegistrationFlow> {
   void _goToHome() {
     Navigator.pushReplacement(
       context,
-      MaterialPageRoute(builder: (_) => const HomeAndAlertPreview()),
+      MaterialPageRoute(builder: (_) => const MainShell()),
     );
   }
 
@@ -113,6 +124,7 @@ class _FirstRegistrationFlowState extends State<FirstRegistrationFlow> {
       if (!mounted) return;
       setState(() {
         _inviteCode = invite.inviteCode;
+        _inviteExpiresAt = invite.expiresAt;
         _myName = profile.name;
       });
     } on ApiException catch (e) {
@@ -125,42 +137,71 @@ class _FirstRegistrationFlowState extends State<FirstRegistrationFlow> {
     _next();
   }
 
-  /// 2단계: 보호자 정보(전화번호) → 인증번호 발송·확인 → 패스키 계정에 번호 연결.
+  /// 2단계: 보호자 정보(전화번호) → Firebase SMS 인증 → 패스키 계정에 번호 연결.
   /// 성공하면 세션 저장(자동 로그인) 후 다음 페이지로.
-  Future<void> _onGuardianNext(String phone) async {
+  ///
+  /// SMS 발송·검증은 Firebase 가 하고, 백엔드는 그 결과인 ID 토큰만 검증한다.
+  Future<void> _onGuardianNext(
+    String name,
+    String phone,
+    String relation,
+  ) async {
     if (_busy) return;
     if (_onboardingToken == null) {
       _snack('먼저 Face ID 등록을 완료해 주세요.');
+      return;
+    }
+    if (name.trim().isEmpty) {
+      _snack('이름을 입력해 주세요.');
       return;
     }
     if (phone.trim().length < 9) {
       _snack('전화번호를 확인해 주세요.');
       return;
     }
-    if (kBypassPasskeyForDevelopment) {
-      _snack('개발 모드: 전화번호 인증을 건너뛰었습니다.');
-      _next();
-      return;
-    }
     try {
       _setBusy(true, '인증번호 발송 중…');
-      await _api.sendCode(phone);
+      // Android 에서 문자가 자동으로 읽히면 코드 입력 없이 토큰이 바로 온다.
+      var idToken = await _phoneAuth.sendCode(phone);
       _setBusy(false);
 
-      final code = await _promptOtp(phone);
-      if (code == null || code.trim().isEmpty) return; // 취소
+      if (idToken == null) {
+        final code = await _promptOtp(phone);
+        if (code == null || code.trim().isEmpty) return; // 취소
 
-      _setBusy(true, '인증번호 확인 중…');
-      final result = await _api.attachPhone(
+        _setBusy(true, '인증번호 확인 중…');
+        idToken = await _phoneAuth.confirmCode(code.trim());
+      }
+
+      // 개발 모드에서는 여기까지가 검증 대상이다. 백엔드 교환은 건너뛴다.
+      if (kBypassPasskeyForDevelopment) {
+        await _phoneAuth.signOut();
+        _setBusy(false);
+        _snack('Firebase 인증 성공! ID 토큰 ${idToken.length}자를 받았어요.');
+        _next();
+        return;
+      }
+
+      _setBusy(true, '가입 마무리 중…');
+      final result = await _api.attachPhoneWithFirebase(
         onboardingToken: _onboardingToken!,
-        phone: phone,
-        code: code.trim(),
+        idToken: idToken,
       );
       await SessionStore.saveSession(
         accessToken: result.accessToken,
         refreshToken: result.refreshToken,
         protectorId: result.protectorId,
       );
+      // 백엔드 세션을 받았으니 Firebase 쪽 로그인 상태는 정리한다.
+      await _phoneAuth.signOut();
+      // 여기서 이름·관계를 채운다. 패스키를 먼저 만드는 순서라 등록 시점엔
+      // 아직 입력을 받지 못했다. 실패해도 가입 자체는 끝난 것이라 넘어간다.
+      try {
+        await _settings.updateProfile(
+          name: name.trim(),
+          relation: relation,
+        );
+      } catch (_) {}
       _setBusy(false);
       _snack('전화번호 인증 완료! 가입이 끝났어요.');
       _next();
@@ -170,7 +211,7 @@ class _FirstRegistrationFlowState extends State<FirstRegistrationFlow> {
     }
   }
 
-  /// 인증번호 입력 다이얼로그. mock SMS는 서버 로그/────/dev 엔드포인트로 확인.
+  /// 인증번호 입력 다이얼로그. 문자는 Firebase 가 보낸다.
   Future<String?> _promptOtp(String phone) {
     final controller = TextEditingController();
     return showDialog<String>(
@@ -230,6 +271,7 @@ class _FirstRegistrationFlowState extends State<FirstRegistrationFlow> {
       _FamilyConnectPage(onBack: _back, onNext: _next),
       _InviteCodeCreatePage(
         code: _inviteCode,
+        expiresAt: _inviteExpiresAt,
         myName: _myName,
         onBack: _back,
         onNext: _goToHome,
@@ -238,6 +280,9 @@ class _FirstRegistrationFlowState extends State<FirstRegistrationFlow> {
 
     return Scaffold(
       backgroundColor: _bg,
+      // 고정 크기 뷰포트라 키보드가 화면을 밀면 내용이 넘친다(보호자 정보 화면).
+      // 밀지 않게 두고 키보드는 입력칸 위에 겹치게 한다.
+      resizeToAvoidBottomInset: false,
       body: Stack(
         children: [
           AnimatedSwitcher(
@@ -372,15 +417,17 @@ class _GuardianInfoPage extends StatefulWidget {
   const _GuardianInfoPage({required this.onBack, required this.onNext});
 
   final VoidCallback onBack;
-  final Future<void> Function(String phone) onNext;
+  final Future<void> Function(String name, String phone, String relation)
+  onNext;
 
   @override
   State<_GuardianInfoPage> createState() => _GuardianInfoPageState();
 }
 
 class _GuardianInfoPageState extends State<_GuardianInfoPage> {
-  final _nameController = TextEditingController(text: '김기억');
-  final _phoneController = TextEditingController(text: '010-1234-5678');
+  // 예시값을 미리 채워 두면 그대로 인증을 눌러 남의 번호로 문자가 간다.
+  final _nameController = TextEditingController();
+  final _phoneController = TextEditingController();
   String _selectedRelation = '딸';
 
   @override
@@ -428,7 +475,11 @@ class _GuardianInfoPageState extends State<_GuardianInfoPage> {
           const Spacer(),
           _BottomButton(
             text: '인증하고 계속하기',
-            onTap: () => widget.onNext(_phoneController.text),
+            onTap: () => widget.onNext(
+              _nameController.text,
+              _phoneController.text,
+              _selectedRelation,
+            ),
           ),
           SizedBox(height: 18.h),
         ],
@@ -590,7 +641,7 @@ class _FamilyConnectPage extends StatelessWidget {
   void _goHome(BuildContext context) {
     Navigator.pushReplacement(
       context,
-      MaterialPageRoute(builder: (_) => const HomeAndAlertPreview()),
+      MaterialPageRoute(builder: (_) => const MainShell()),
     );
   }
 
@@ -631,6 +682,7 @@ class _FamilyConnectPage extends StatelessWidget {
 class _InviteCodeCreatePage extends StatefulWidget {
   const _InviteCodeCreatePage({
     required this.code,
+    required this.expiresAt,
     required this.myName,
     required this.onBack,
     required this.onNext,
@@ -638,6 +690,9 @@ class _InviteCodeCreatePage extends StatefulWidget {
 
   /// 아직 못 받았으면 null.
   final String? code;
+
+  /// 서버가 알려준 만료 시각.
+  final DateTime? expiresAt;
 
   /// 코드를 만든 사람(나) 이름.
   final String myName;
@@ -659,18 +714,37 @@ class _InviteCodeCreatePageState extends State<_InviteCodeCreatePage> {
     setState(() => _copied = true);
   }
 
+  Future<void> _shareCode() async {
+    final code = widget.code;
+    if (code == null) return;
+    await SharePlus.instance.share(
+      ShareParams(
+        subject: 'ReMory 가족 초대',
+        text: 'ReMory 가족 초대 코드예요.\n\n$code\n\n앱에서 이 코드를 입력하면 연결돼요.',
+      ),
+    );
+  }
+
+  /// 서버가 준 만료 시각으로 안내 문구를 만든다. 하드코딩하면 서버 설정을
+  /// 바꿨을 때 화면만 옛 값을 말하게 된다.
+  String get _validityText {
+    final at = widget.expiresAt;
+    if (at == null) return '가족이 ReMory 앱에서 이 코드를 입력하면 연결돼요.';
+    // 서버가 더 길게 줘도 코드는 하루까지만 쓰는 값이라 그렇게 안내한다.
+    final left = _atMostADay(at.difference(DateTime.now()));
+    if (left.isNegative) return '만료된 코드예요. 새 코드를 발급해 주세요.';
+    final text = left.inHours >= 1 ? '${left.inHours}시간' : '${left.inMinutes}분';
+    return '$text 동안 유효해요.\n가족이 ReMory 앱에서 이 코드를 입력하면 연결돼요.';
+  }
+
   @override
   Widget build(BuildContext context) {
     return _PhoneScreen(
       title: '가족 초대',
       onBack: widget.onBack,
       trailing: GestureDetector(
-        onTap: () {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (_) => const HomeAndAlertPreview()),
-          );
-        },
+        // 홈 이동은 플로우가 갖고 있다. 여기서 또 라우팅하지 않는다.
+        onTap: widget.onNext,
         child: Text('홈으로', style: _smallStyle()),
       ),
       child: Column(
@@ -713,7 +787,7 @@ class _InviteCodeCreatePageState extends State<_InviteCodeCreatePage> {
                   ),
                   SizedBox(height: 18.h),
                   Text(
-                    '4시간 동안 유효해요.\n가족이 ReMory 앱에서 이 코드를 입력하면 연결돼요.',
+                    _validityText,
                     textAlign: TextAlign.center,
                     style: _smallStyle(),
                   ),
@@ -751,7 +825,7 @@ class _InviteCodeCreatePageState extends State<_InviteCodeCreatePage> {
             text: '공유하기',
             icon: Icons.ios_share,
             pale: true,
-            onTap: widget.onNext,
+            onTap: _shareCode,
           ),
           const Spacer(),
         ],
