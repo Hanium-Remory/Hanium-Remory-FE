@@ -302,29 +302,43 @@ class _FamilyChatScreenState extends State<FamilyChatScreen> {
         if (!didPop) _goHome(context);
       },
       child: _PhoneFrame(
-        child: Column(
-          children: [
-            SizedBox(height: 10.h),
-            _Header(
-              initials: _memberInitials.values
-                  .where((e) => e.isNotEmpty)
-                  .toList(),
-              count: _familyCount,
-            ),
-            SizedBox(height: 14.h),
-            Expanded(child: _buildMessages()),
-            _InputBar(
-              controller: _messageController,
-              canSend: _hasText && !_sending && _userId != null,
-              onSend: _sendMessage,
-              onPhoto: _pickAndSendPhoto,
-            ),
-            const SizedBox(height: 10),
-          ],
+        child: Padding(
+          // 셸이 키보드를 피하지 않으므로 여기서 직접 피한다. 네비바가 이미
+          // 차지한 만큼은 빼야 입력창이 키보드 위로 붕 뜨지 않는다.
+          padding: EdgeInsets.only(bottom: _keyboardGap(context)),
+          child: Column(
+            children: [
+              SizedBox(height: 10.h),
+              _Header(
+                initials: _memberInitials.values
+                    .where((e) => e.isNotEmpty)
+                    .toList(),
+                count: _familyCount,
+              ),
+              SizedBox(height: 14.h),
+              Expanded(child: _buildMessages()),
+              _InputBar(
+                controller: _messageController,
+                canSend: _hasText && !_sending && _userId != null,
+                onSend: _sendMessage,
+                onPhoto: _pickAndSendPhoto,
+              ),
+              const SizedBox(height: 10),
+            ],
+          ),
         ),
       ),
     );
   }
+}
+
+/// 키보드가 가린 높이에서, 네비바가 이미 차지한 만큼을 뺀 값.
+double _keyboardGap(BuildContext context) {
+  final keyboard = MediaQuery.viewInsetsOf(context).bottom;
+  if (keyboard <= 0) return 0;
+  final reserved = MainShellScope.maybeOf(context)?.bottomReserved ?? 0;
+  final gap = keyboard - reserved;
+  return gap > 0 ? gap : 0;
 }
 
 class _PhoneFrame extends StatelessWidget {
@@ -336,6 +350,8 @@ class _PhoneFrame extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: _bg,
+      // 위에서 _keyboardGap 으로 직접 피한다. 여기서 또 피하면 두 번 올라간다.
+      resizeToAvoidBottomInset: false,
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 402),

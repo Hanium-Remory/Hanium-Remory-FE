@@ -18,6 +18,9 @@ const Color _muted = Color(0xFF7C6B61);
 const Color _line = Color(0xFFE8DCD2);
 const Color _yellow = Color(0xFFF6C43D);
 
+/// 네비바 높이. 대화 화면이 키보드를 피할 때 이 값을 빼고 올라간다.
+const double _navBarHeight = 62;
+
 /// 탭 순서. 네비바와 IndexedStack 이 이 순서를 공유한다.
 enum AppTab { home, chat, memory, settings }
 
@@ -27,16 +30,24 @@ class MainShellScope extends InheritedWidget {
   const MainShellScope({
     super.key,
     required this.selectTab,
+    required this.bottomReserved,
     required super.child,
   });
 
   final void Function(AppTab tab) selectTab;
 
+  /// 화면 아래쪽에서 네비바가 차지하는 높이(안전영역 포함).
+  ///
+  /// 셸이 키보드를 피하지 않으므로, 키보드를 피해야 하는 화면(대화)은
+  /// 이만큼을 뺀 나머지만 올라가면 된다. 안 빼면 네비바 높이만큼 붕 뜬다.
+  final double bottomReserved;
+
   static MainShellScope? maybeOf(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<MainShellScope>();
 
   @override
-  bool updateShouldNotify(MainShellScope oldWidget) => false;
+  bool updateShouldNotify(MainShellScope oldWidget) =>
+      oldWidget.bottomReserved != bottomReserved;
 }
 
 class MainShell extends StatefulWidget {
@@ -60,8 +71,13 @@ class _MainShellState extends State<MainShell> {
   Widget build(BuildContext context) {
     return MainShellScope(
       selectTab: (tab) => _select(tab.index),
+      bottomReserved:
+          _navBarHeight + 8.h + MediaQuery.paddingOf(context).bottom,
       child: Scaffold(
         backgroundColor: _bg,
+        // 키보드가 올라와도 셸은 그대로 둔다. 이걸 켜두면 네비바까지 키보드를
+        // 타고 밀려 올라갔다. 키보드를 피하는 건 각 화면(대화)이 알아서 한다.
+        resizeToAvoidBottomInset: false,
         body: SafeArea(
           child: Column(
             children: [
@@ -115,7 +131,7 @@ class AppNavBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 62,
+      height: _navBarHeight,
       padding: const EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(
         color: Colors.white,
