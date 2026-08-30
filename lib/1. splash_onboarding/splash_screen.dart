@@ -3,8 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
+import '../main_shell.dart';
+import '../2. pastkey/login_screen.dart';
 import '../2. pastkey/signup_method_screen.dart';
-import '../4. home/home_and_alert_center.dart';
 import '../services/session_store.dart';
 import 'onboarding_screen.dart';
 
@@ -21,15 +22,18 @@ class _SplashScreenState extends State<SplashScreen> {
     super.initState();
 
     Timer(const Duration(seconds: 2), () async {
-      // 자동 로그인 라우팅: 세션 있으면 홈, 온보딩 봤으면 가입방법, 처음이면 온보딩.
-      final loggedIn = await SessionStore.isLoggedIn();
+      // 자동 로그인 라우팅.
+      final session = await SessionStore.sessionState();
       final seenOnboarding = await SessionStore.hasSeenOnboarding();
       if (!mounted) return;
-      final Widget next = loggedIn
-          ? const HomeAndAlertPreview()
-          : seenOnboarding
-              ? const SignupMethodScreen()
-              : const OnboardingScreen();
+      final Widget next = switch (session) {
+        SessionState.valid => const MainShell(),
+        // 쓰던 계정이 만료됐을 뿐이니 가입이 아니라 로그인으로 보낸다.
+        SessionState.expired => const LoginScreen(),
+        SessionState.none => seenOnboarding
+            ? const SignupMethodScreen()
+            : const OnboardingScreen(),
+      };
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (_) => next),

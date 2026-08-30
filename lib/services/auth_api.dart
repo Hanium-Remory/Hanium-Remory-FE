@@ -19,6 +19,16 @@ const String kBackendBaseUrl = String.fromEnvironment(
   defaultValue: 'https://32-184-124-116.sslip.io',
 );
 
+/// Firebase ID 토큰을 세션으로 바꿔주는 백엔드 엔드포인트 경로.
+///
+/// 백엔드에 이미 구현돼 있다(app/routers/phone.py). 경로가 바뀌면 실행할 때
+/// 넘겨서 덮을 수 있다:
+///   flutter run --dart-define=FIREBASE_VERIFY_PATH=/auth/phone/other
+const String kFirebaseVerifyPath = String.fromEnvironment(
+  'FIREBASE_VERIFY_PATH',
+  defaultValue: '/auth/phone/verify-firebase',
+);
+
 /// 로그인/가입 성공 시 발급되는 세션 정보.
 class AuthResult {
   AuthResult({
@@ -154,6 +164,28 @@ class AuthApi {
     final d = await _post(
       '/auth/phone/verify',
       {'phoneNumber': phone, 'code': code},
+      bearer: onboardingToken,
+    );
+    return _toResult(d);
+  }
+
+  /// Face-ID-first: Firebase SMS 인증 결과로 번호를 연결 → 정식 세션 토큰.
+  ///
+  /// [idToken] 은 FirebasePhoneAuth 가 돌려준 Firebase ID 토큰이다.
+  /// 백엔드는 Admin SDK 로 verifyIdToken 한 뒤 phone_number 클레임을
+  /// onboardingToken 이 가리키는 패스키 계정에 연결하면 된다.
+  ///
+  ///   POST $kFirebaseVerifyPath
+  ///   `Authorization: Bearer <onboardingToken>`
+  ///   `{ "idToken": "<Firebase ID token>" }`
+  ///   → data: { protectorId, accessToken, refreshToken, onboardingCompleted }
+  Future<AuthResult> attachPhoneWithFirebase({
+    required String onboardingToken,
+    required String idToken,
+  }) async {
+    final d = await _post(
+      kFirebaseVerifyPath,
+      {'idToken': idToken},
       bearer: onboardingToken,
     );
     return _toResult(d);

@@ -3,6 +3,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import '../3. code/first_registration_flow.dart';
 import '../3. code/invite_code_input_screen.dart';
+import 'login_screen.dart';
 
 const Color _background = Color(0xFFFBF6EE);
 const Color _brown = Color(0xFF9B674C);
@@ -25,6 +26,13 @@ class SignupMethodScreen extends StatelessWidget {
     Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => const InviteCodeInputScreen()),
+    );
+  }
+
+  void _openLogin(BuildContext context) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
     );
   }
 
@@ -78,6 +86,21 @@ class SignupMethodScreen extends StatelessWidget {
                     description: '가족이 알려준 6자리코드\n이미 등록된 사용자와 연결돼요',
                     onTap: () => _openCodeInput(context),
                   ),
+                  const Spacer(),
+                  Center(
+                    child: TextButton(
+                      onPressed: () => _openLogin(context),
+                      child: Text(
+                        '이미 가입하셨나요? 로그인',
+                        style: TextStyle(
+                          color: _muted,
+                          fontSize: 12.sp,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ),
+                  SizedBox(height: 12.h),
                 ],
               ),
             ),
