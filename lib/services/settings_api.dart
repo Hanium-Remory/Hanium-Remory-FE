@@ -189,6 +189,25 @@ class SettingsApi {
       _send('DELETE', '/family-members/$protectorId');
 
   // ── 인형 설정 ──────────────────────────────────────
+  /// 인형(모리)을 어르신에게 연결한다. 이걸 하기 전에는 deviceId 가 없어서
+  /// 인형 설정·방해 금지·약 복용 화면을 아예 열 수 없다.
+  Future<PairedDevice> pairDevice(
+    int userId, {
+    String? name,
+    String? serial,
+  }) async {
+    final d = await _send(
+      'POST',
+      '/devices',
+      body: {
+        'userId': userId,
+        'name': ?name,
+        'serial': ?serial,
+      },
+    );
+    return PairedDevice.fromJson(d as Map<String, dynamic>);
+  }
+
   Future<DeviceSettings> deviceSettings(int deviceId) async =>
       DeviceSettings.fromJson(await _get('/devices/$deviceId/settings'));
 
@@ -410,11 +429,22 @@ class SettingsApi {
       _send('PATCH', '/notifications/$notificationId/read');
 
   // ── 리포트 ─────────────────────────────────────────
-  /// 가장 최근 데일리 리포트. 아직 만들어지지 않았으면 null 이다.
-  Future<DailyReportData?> dailyReport(int userId) async {
-    final d = await _send('GET', '/users/$userId/reports/daily');
+  /// 데일리 리포트. [offset] 0 이 가장 최근, 1 이 그 전날치다.
+  /// 더 이전 것이 없으면 null 이다(앱은 이걸로 < 버튼 끝을 안다).
+  Future<DailyReportData?> dailyReport(int userId, {int offset = 0}) async {
+    final d = await _send('GET', '/users/$userId/reports/daily?offset=$offset');
     if (d == null) return null;
     return DailyReportData.fromJson(d as Map<String, dynamic>);
+  }
+
+  /// 주간 리포트. [offset] 0 이 가장 최근, 1 이 그 전주치다.
+  Future<WeeklyReportData?> weeklyReport(int userId, {int offset = 0}) async {
+    final d = await _send(
+      'GET',
+      '/users/$userId/reports/weekly?offset=$offset',
+    );
+    if (d == null) return null;
+    return WeeklyReportData.fromJson(d as Map<String, dynamic>);
   }
 
   // ── 어르신 등록 ────────────────────────────────────
@@ -757,12 +787,18 @@ class MyProfile {
 
 /// 발급한 초대 코드.
 class InviteCodeData {
-  InviteCodeData({required this.inviteCode, required this.userId, this.expiresAt});
+  InviteCodeData({
+    required this.inviteCode,
+    required this.userId,
+    this.expiresAt,
+  });
 
   factory InviteCodeData.fromJson(Map<String, dynamic> json) => InviteCodeData(
     inviteCode: json['inviteCode'] as String,
     userId: json['userId'] as int,
-    expiresAt: DateTime.tryParse((json['expiresAt'] as String?) ?? '')?.toLocal(),
+    expiresAt: DateTime.tryParse(
+      (json['expiresAt'] as String?) ?? '',
+    )?.toLocal(),
   );
 
   final String inviteCode;
@@ -772,7 +808,11 @@ class InviteCodeData {
 
 /// 초대 코드를 받아들인 결과.
 class LinkedFamily {
-  LinkedFamily({required this.userId, required this.name, required this.isPrimary});
+  LinkedFamily({
+    required this.userId,
+    required this.name,
+    required this.isPrimary,
+  });
 
   factory LinkedFamily.fromJson(Map<String, dynamic> json) => LinkedFamily(
     userId: json['userId'] as int,
@@ -858,12 +898,18 @@ class HomeDevice {
 }
 
 class EmotionPoint {
-  EmotionPoint({required this.emotionId, required this.emotion, this.createdAt});
+  EmotionPoint({
+    required this.emotionId,
+    required this.emotion,
+    this.createdAt,
+  });
 
   factory EmotionPoint.fromJson(Map<String, dynamic> json) => EmotionPoint(
     emotionId: json['emotionId'] as int,
     emotion: (json['emotion'] as String?) ?? '',
-    createdAt: DateTime.tryParse((json['createdAt'] as String?) ?? '')?.toLocal(),
+    createdAt: DateTime.tryParse(
+      (json['createdAt'] as String?) ?? '',
+    )?.toLocal(),
   );
 
   final int emotionId;
@@ -885,7 +931,9 @@ class ActivityItem {
     activityId: json['activityId'] as int,
     activityType: (json['activityType'] as String?) ?? '',
     content: json['content'] as String?,
-    createdAt: DateTime.tryParse((json['createdAt'] as String?) ?? '')?.toLocal(),
+    createdAt: DateTime.tryParse(
+      (json['createdAt'] as String?) ?? '',
+    )?.toLocal(),
   );
 
   final int activityId;
@@ -907,14 +955,17 @@ class AppNotification {
     this.createdAt,
   });
 
-  factory AppNotification.fromJson(Map<String, dynamic> json) => AppNotification(
-    notificationId: json['notificationId'] as int,
-    type: (json['type'] as int?) ?? 0,
-    title: json['title'] as String?,
-    content: json['content'] as String?,
-    isRead: json['isRead'] == true,
-    createdAt: DateTime.tryParse((json['createdAt'] as String?) ?? '')?.toLocal(),
-  );
+  factory AppNotification.fromJson(Map<String, dynamic> json) =>
+      AppNotification(
+        notificationId: json['notificationId'] as int,
+        type: (json['type'] as int?) ?? 0,
+        title: json['title'] as String?,
+        content: json['content'] as String?,
+        isRead: json['isRead'] == true,
+        createdAt: DateTime.tryParse(
+          (json['createdAt'] as String?) ?? '',
+        )?.toLocal(),
+      );
 
   final int notificationId;
 
@@ -930,6 +981,45 @@ class AppNotification {
 }
 
 /// 데일리 리포트. 서버가 아직 만들지 않았으면 조회 결과가 null 이다.
+/// 주간 리포트. GET /users/{id}/reports/weekly 응답.
+class WeeklyReportData {
+  WeeklyReportData({
+    required this.reportId,
+    required this.totalConversationCount,
+    required this.familyInteractionCount,
+    this.avgEmotionScore,
+    this.dominantEmotion,
+    required this.emergencyAlertCount,
+    this.weeklySummary,
+    this.createdAt,
+  });
+
+  factory WeeklyReportData.fromJson(Map<String, dynamic> json) =>
+      WeeklyReportData(
+        reportId: json['reportId'] as int,
+        totalConversationCount: (json['totalConversationCount'] as int?) ?? 0,
+        familyInteractionCount: (json['familyInteractionCount'] as int?) ?? 0,
+        avgEmotionScore: json['avgEmotionScore'] as int?,
+        dominantEmotion: json['dominantEmotion'] as String?,
+        emergencyAlertCount: (json['emergencyAlertCount'] as int?) ?? 0,
+        weeklySummary: json['weeklySummary'] as String?,
+        createdAt: DateTime.tryParse(
+          (json['createdAt'] as String?) ?? '',
+        )?.toLocal(),
+      );
+
+  final int reportId;
+  final int totalConversationCount;
+  final int familyInteractionCount;
+
+  /// 0~100. 서버가 아직 못 채우면 null 이다.
+  final int? avgEmotionScore;
+  final String? dominantEmotion;
+  final int emergencyAlertCount;
+  final String? weeklySummary;
+  final DateTime? createdAt;
+}
+
 class DailyReportData {
   DailyReportData({
     required this.reportId,
@@ -942,18 +1032,21 @@ class DailyReportData {
     this.createdAt,
   });
 
-  factory DailyReportData.fromJson(Map<String, dynamic> json) => DailyReportData(
-    reportId: json['reportId'] as int,
-    reportDate: json['reportDate'] == null
-        ? null
-        : DateTime.parse(json['reportDate'] as String),
-    conversationCount: (json['conversationCount'] as int?) ?? 0,
-    familyInteractionCount: (json['familyInteractionCount'] as int?) ?? 0,
-    emotionSummary: json['emotionSummary'] as String?,
-    summary: json['summary'] as String?,
-    suggestion: json['suggestion'] as String?,
-    createdAt: DateTime.tryParse((json['createdAt'] as String?) ?? '')?.toLocal(),
-  );
+  factory DailyReportData.fromJson(Map<String, dynamic> json) =>
+      DailyReportData(
+        reportId: json['reportId'] as int,
+        reportDate: json['reportDate'] == null
+            ? null
+            : DateTime.parse(json['reportDate'] as String),
+        conversationCount: (json['conversationCount'] as int?) ?? 0,
+        familyInteractionCount: (json['familyInteractionCount'] as int?) ?? 0,
+        emotionSummary: json['emotionSummary'] as String?,
+        summary: json['summary'] as String?,
+        suggestion: json['suggestion'] as String?,
+        createdAt: DateTime.tryParse(
+          (json['createdAt'] as String?) ?? '',
+        )?.toLocal(),
+      );
 
   final int reportId;
 
@@ -987,7 +1080,9 @@ class ChatMessage {
     senderId: json['senderId'] as int?,
     content: json['content'] as String?,
     imageUrl: json['imageUrl'] as String?,
-    createdAt: DateTime.tryParse((json['createdAt'] as String?) ?? '')?.toLocal(),
+    createdAt: DateTime.tryParse(
+      (json['createdAt'] as String?) ?? '',
+    )?.toLocal(),
   );
 
   final int messageId;
@@ -1126,6 +1221,25 @@ class FamilyMember {
   List<String> get badges => [if (isMe) '나', if (isPrimary) '주보호자'];
 }
 
+/// POST /devices 응답 중 앱이 쓰는 부분.
+class PairedDevice {
+  PairedDevice({
+    required this.deviceId,
+    required this.userId,
+    required this.name,
+  });
+
+  factory PairedDevice.fromJson(Map<String, dynamic> json) => PairedDevice(
+    deviceId: json['deviceId'] as int,
+    userId: json['userId'] as int,
+    name: json['name'] as String? ?? '모리',
+  );
+
+  final int deviceId;
+  final int userId;
+  final String name;
+}
+
 class DeviceSettings {
   DeviceSettings({
     required this.deviceId,
@@ -1183,6 +1297,7 @@ class DeviceVoice {
     required this.status,
     required this.progress,
     required this.isDefault,
+    this.audioUrl,
   });
 
   factory DeviceVoice.fromJson(Map<String, dynamic> json) => DeviceVoice(
@@ -1191,6 +1306,7 @@ class DeviceVoice {
     status: json['status'] as String,
     progress: json['progress'] as int? ?? 0,
     isDefault: json['isDefault'] == true,
+    audioUrl: json['audioUrl'] as String?,
   );
 
   final int voiceId;
@@ -1198,6 +1314,9 @@ class DeviceVoice {
   final String status; // ready | training | failed
   final int progress;
   final bool isDefault;
+
+  /// 등록한 원본 녹음. 다시 들어볼 때 쓴다.
+  final String? audioUrl;
 
   bool get isTraining => status == 'training';
   bool get isReady => status == 'ready';

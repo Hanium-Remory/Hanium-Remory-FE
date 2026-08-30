@@ -6,10 +6,11 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../1. splash_onboarding/splash_screen.dart';
-import '../4. home/home_and_alert_center.dart';
-import '../5. memory/memory_add_flow.dart';
-import '../6. chat/family_chat_screen.dart';
 import '../services/session_store.dart';
+import 'package:audioplayers/audioplayers.dart';
+import 'package:share_plus/share_plus.dart';
+
+import '../main_shell.dart';
 import '../services/settings_api.dart';
 
 const Color _bg = Color(0xFFFBF6EE);
@@ -22,28 +23,12 @@ const Color _green = Color(0xFF5D9E41);
 
 final SettingsApi _api = SettingsApi();
 
-class SettingsFlow extends StatefulWidget {
+/// 설정 탭. 탭 사이 이동은 MainShell 이 맡는다.
+class SettingsFlow extends StatelessWidget {
   const SettingsFlow({super.key});
 
   @override
-  State<SettingsFlow> createState() => _SettingsFlowState();
-}
-
-class _SettingsFlowState extends State<SettingsFlow> {
-  int _destination = 3;
-
-  @override
-  Widget build(BuildContext context) {
-    return switch (_destination) {
-      0 => const HomeAndAlertPreview(),
-      1 => const FamilyChatScreen(),
-      2 => const MemoryAddFlow(),
-      _ => SettingsHubScreen(
-        onBack: () => setState(() => _destination = 0),
-        onDestinationSelected: (index) => setState(() => _destination = index),
-      ),
-    };
-  }
+  Widget build(BuildContext context) => const SettingsHubScreen();
 }
 
 /// 설정 허브에서 한 번에 불러오는 것들(각 화면 부제목에 쓰인다).
@@ -93,14 +78,9 @@ Future<_HubData> _loadHub() async {
 }
 
 class SettingsHubScreen extends StatelessWidget {
-  const SettingsHubScreen({
-    super.key,
-    this.onBack,
-    required this.onDestinationSelected,
-  });
+  const SettingsHubScreen({super.key, this.onBack});
 
   final VoidCallback? onBack;
-  final ValueChanged<int> onDestinationSelected;
 
   @override
   Widget build(BuildContext context) {
@@ -115,7 +95,8 @@ class SettingsHubScreen extends StatelessWidget {
                 tooltip: '홈으로 돌아가기',
                 onPressed:
                     onBack ??
-                    () => _replaceRoot(context, const HomeAndAlertPreview()),
+                    () =>
+                        MainShellScope.maybeOf(context)?.selectTab(AppTab.home),
                 icon: const Icon(Icons.arrow_back_ios_new_rounded),
                 color: _dark,
                 iconSize: 20,
@@ -126,7 +107,7 @@ class SettingsHubScreen extends StatelessWidget {
               const Text(
                 '설정',
                 style: TextStyle(
-                  fontSize: 26,
+                  fontSize: 17,
                   fontWeight: FontWeight.w900,
                   color: _dark,
                 ),
@@ -141,8 +122,6 @@ class SettingsHubScreen extends StatelessWidget {
                   _HubBody(data: data, reload: reload),
             ),
           ),
-          _SettingsNavBar(onSelected: onDestinationSelected),
-          SizedBox(height: 8.h),
         ],
       ),
     );
@@ -212,13 +191,19 @@ class _HubBody extends StatelessWidget {
         if (user == null)
           _NoElderCard(reload: reload)
         else ...[
+          if (deviceId == null) ...[
+            _NoDeviceCard(userId: user.userId, reload: reload),
+            SizedBox(height: 14.h),
+          ],
           _Section(
             title: '돌봄',
             children: [
               _MenuRow(
                 icon: Icons.sentiment_satisfied_alt,
                 title: '모리 인형 설정',
-                subtitle: '목소리, 볼륨, 배터리',
+                subtitle: deviceId == null
+                    ? '인형을 연결하면 쓸 수 있어요'
+                    : '목소리, 볼륨, 배터리',
                 onTap: deviceId == null
                     ? null
                     : () => _openAndReload(
@@ -267,7 +252,9 @@ class _HubBody extends StatelessWidget {
               _MenuRow(
                 icon: Icons.nightlight_round,
                 title: '방해 금지 시간',
-                subtitle: dnd == null
+                subtitle: deviceId == null
+                    ? '인형을 연결하면 쓸 수 있어요'
+                    : dnd == null
                     ? '-'
                     : dnd.enabled
                     ? '${_hourText(dnd.startHour)} ~ ${_hourText(dnd.endHour)}'
@@ -283,7 +270,9 @@ class _HubBody extends StatelessWidget {
               _MenuRow(
                 icon: Icons.medication_outlined,
                 title: '약 복용 시간',
-                subtitle: '하루 ${data.medications?.items.length ?? 0}번',
+                subtitle: deviceId == null
+                    ? '인형을 연결하면 쓸 수 있어요'
+                    : '하루 ${data.medications?.items.length ?? 0}번',
                 onTap: deviceId == null
                     ? null
                     : () => _openAndReload(
@@ -369,6 +358,62 @@ class _NoElderCardState extends State<_NoElderCard> {
   }
 }
 
+/// 어르신은 있는데 인형(Device)이 아직 연결되지 않은 상태.
+///
+/// 이때는 서버가 deviceId 를 주지 않아 인형 설정·방해 금지·약 복용 화면을
+/// 열 수 없다. 여기서 POST /devices 로 연결하면 세 화면이 모두 살아난다.
+class _NoDeviceCard extends StatefulWidget {
+  const _NoDeviceCard({required this.userId, required this.reload});
+
+  final int userId;
+  final Future<void> Function() reload;
+
+  @override
+  State<_NoDeviceCard> createState() => _NoDeviceCardState();
+}
+
+class _NoDeviceCardState extends State<_NoDeviceCard> {
+  bool _busy = false;
+
+  Future<void> _pair() async {
+    setState(() => _busy = true);
+    try {
+      await _api.pairDevice(widget.userId, name: '모리');
+      await widget.reload();
+      if (mounted) _toast(context, '인형을 연결했어요.');
+    } catch (e) {
+      if (mounted) _toast(context, _errorText(e));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: _cardDecoration(),
+      child: Column(
+        children: [
+          const Icon(Icons.toys_outlined, color: _muted, size: 28),
+          SizedBox(height: 10.h),
+          Text(
+            '아직 연결된 인형이 없어요.\n연결해야 볼륨·방해 금지·약 복용을 설정할 수 있어요.',
+            textAlign: TextAlign.center,
+            style: _caption(),
+          ),
+          SizedBox(height: 12.h),
+          TextButton(
+            onPressed: _busy ? null : _pair,
+            style: TextButton.styleFrom(foregroundColor: _brown),
+            child: Text(_busy ? '연결하는 중...' : '모리 인형 연결하기'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 // ── 내 프로필 ────────────────────────────────────────
 class MyProfileScreen extends StatefulWidget {
   const MyProfileScreen({super.key});
@@ -378,11 +423,8 @@ class MyProfileScreen extends StatefulWidget {
 }
 
 class _MyProfileScreenState extends State<MyProfileScreen> {
-  bool _showSettings = false;
-
   @override
   Widget build(BuildContext context) {
-    if (_showSettings) return const SettingsFlow();
     return _PhoneFrame(
       child: _AsyncView<MyProfile>(
         load: _api.myProfile,
@@ -390,7 +432,7 @@ class _MyProfileScreenState extends State<MyProfileScreen> {
           children: [
             _TopHeader(
               title: '내 프로필',
-              onBack: () => setState(() => _showSettings = true),
+              onBack: () => Navigator.pop(context),
               action: '편집',
               onAction: () => _openAndReload(
                 context,
@@ -550,6 +592,8 @@ class _MyProfileEditScreenState extends State<MyProfileEditScreen> {
       await _api.updateProfile(name: name.text.trim(), relation: relation);
       if (!mounted) return;
       _savedToast(context);
+      // 돌아가야 어르신 정보 화면이 다시 불러오면서 메모가 보인다.
+      Navigator.pop(context, true);
     } catch (e) {
       if (mounted) _toast(context, _errorText(e));
     } finally {
@@ -646,16 +690,27 @@ class _MyProfileEditScreenState extends State<MyProfileEditScreen> {
                   ),
                 ),
                 _Label('관계'),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: _relations.map((item) {
-                    return _ChoiceChipButton(
-                      text: item,
-                      selected: relation == item,
-                      onTap: () => setState(() => relation = item),
+                // 한 줄에 3개씩. 글자 길이에 따라 칸이 들쭉날쭉해지지 않도록
+                // 폭을 균등하게 나눈다.
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    const spacing = 8.0;
+                    final itemWidth = (constraints.maxWidth - spacing * 2) / 3;
+                    return Wrap(
+                      spacing: spacing,
+                      runSpacing: spacing,
+                      children: _relations.map((item) {
+                        return SizedBox(
+                          width: itemWidth,
+                          child: _ChoiceChipButton(
+                            text: item,
+                            selected: relation == item,
+                            onTap: () => setState(() => relation = item),
+                          ),
+                        );
+                      }).toList(),
                     );
-                  }).toList(),
+                  },
                 ),
                 SizedBox(height: 64.h),
                 Center(
@@ -693,19 +748,12 @@ class DollSettingsScreen extends StatefulWidget {
 }
 
 class _DollSettingsScreenState extends State<DollSettingsScreen> {
-  bool _showSettings = false;
-
   @override
   Widget build(BuildContext context) {
-    if (_showSettings) return const SettingsFlow();
-
     return _PhoneFrame(
       child: Column(
         children: [
-          _TopHeader(
-            title: '인형 설정',
-            onBack: () => setState(() => _showSettings = true),
-          ),
+          _TopHeader(title: '인형 설정', onBack: () => Navigator.pop(context)),
           Expanded(
             child: _AsyncView<DeviceSettings>(
               load: () => _api.deviceSettings(widget.deviceId),
@@ -843,6 +891,7 @@ class _DollSettingsBody extends StatelessWidget {
             children: device.voices
                 .map(
                   (voice) => _VoiceRow(
+                    audioUrl: voice.audioUrl,
                     name: voice.name,
                     subtitle: voice.statusText,
                     checked: voice.isDefault,
@@ -1007,11 +1056,8 @@ class ElderInfoScreen extends StatefulWidget {
 }
 
 class _ElderInfoScreenState extends State<ElderInfoScreen> {
-  bool _showSettings = false;
-
   @override
   Widget build(BuildContext context) {
-    if (_showSettings) return const SettingsFlow();
     return _PhoneFrame(
       child: _AsyncView<ElderUser>(
         load: () => _api.user(widget.userId),
@@ -1019,7 +1065,7 @@ class _ElderInfoScreenState extends State<ElderInfoScreen> {
           children: [
             _TopHeader(
               title: '${user.name}님 정보',
-              onBack: () => setState(() => _showSettings = true),
+              onBack: () => Navigator.pop(context),
               action: '편집',
               onAction: () => _openAndReload(
                 context,
@@ -1083,15 +1129,19 @@ class _ElderInfoScreenState extends State<ElderInfoScreen> {
                       ('생년월일', user.birthText),
                     ],
                   ),
-                  if (user.note.isNotEmpty) ...[
-                    SizedBox(height: 16.h),
-                    _Label('메모'),
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: _cardDecoration(),
-                      child: Text(user.note, style: _caption()),
+                  SizedBox(height: 16.h),
+                  _Label('메모'),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: _cardDecoration(),
+                    child: Text(
+                      user.note.isEmpty
+                          ? '아직 메모가 없어요. 편집에서 적어 두면 여기 보여요.'
+                          : user.note,
+                      style: _caption(),
                     ),
-                  ],
+                  ),
                 ],
               ),
             ),
@@ -1239,6 +1289,10 @@ class _ElderInfoEditScreenState extends State<ElderInfoEditScreen> {
   }
 }
 
+/// 초대 코드 안내 문구용. 서버 설정이 어떻든 하루를 넘겨 말하지 않는다.
+Duration _atMostADay(Duration left) =>
+    left > const Duration(hours: 24) ? const Duration(hours: 24) : left;
+
 int _daysInMonth(int year, int month) =>
     DateTime(year, month + 1, 0).day; // 다음 달 0일 = 이번 달 말일
 
@@ -1253,8 +1307,6 @@ class FamilyMembersScreen extends StatefulWidget {
 }
 
 class _FamilyMembersScreenState extends State<FamilyMembersScreen> {
-  bool _showSettings = false;
-
   Future<void> _remove(
     BuildContext context,
     FamilyMember member,
@@ -1296,7 +1348,6 @@ class _FamilyMembersScreenState extends State<FamilyMembersScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_showSettings) return const SettingsFlow();
     return _PhoneFrame(
       child: _AsyncView<FamilyMembers>(
         load: () => _api.familyMembers(widget.userId),
@@ -1304,9 +1355,10 @@ class _FamilyMembersScreenState extends State<FamilyMembersScreen> {
           children: [
             _TopHeader(
               title: '가족 멤버',
-              onBack: () => setState(() => _showSettings = true),
+              onBack: () => Navigator.pop(context),
               iconAction: Icons.share_outlined,
-              onAction: () => _push(context, const FamilyInviteScreen()),
+              onAction: () =>
+                  _push(context, FamilyInviteScreen(userId: widget.userId)),
             ),
             Expanded(
               child: ListView(
@@ -1364,7 +1416,10 @@ class _FamilyMembersScreenState extends State<FamilyMembersScreen> {
                   ),
                   SizedBox(height: 12.h),
                   ElevatedButton.icon(
-                    onPressed: () => _push(context, const FamilyInviteScreen()),
+                    onPressed: () => _push(
+                      context,
+                      FamilyInviteScreen(userId: widget.userId),
+                    ),
                     icon: const Icon(Icons.person_add_alt),
                     label: const Text('새 가족 초대하기'),
                     style: _primaryButtonStyle(),
@@ -1380,21 +1435,81 @@ class _FamilyMembersScreenState extends State<FamilyMembersScreen> {
   }
 }
 
-/// 초대 코드 발급 API는 아직 없어서 화면만 유지한다(코드 플로우 붙일 때 연결).
+/// 가족 초대 코드.
+///
+/// 화면에 들어올 때마다 새 코드를 발급받는다. 코드는 한 번 쓰이면 소멸하고
+/// 24시간이 지나면 만료되므로, 예전 코드를 화면에 붙들고 있으면 안 된다.
 class FamilyInviteScreen extends StatefulWidget {
-  const FamilyInviteScreen({super.key});
+  const FamilyInviteScreen({super.key, required this.userId});
+
+  final int userId;
 
   @override
   State<FamilyInviteScreen> createState() => _FamilyInviteScreenState();
 }
 
 class _FamilyInviteScreenState extends State<FamilyInviteScreen> {
-  bool copied = false;
-  static const code = '7M92A4';
+  InviteCodeData? _invite;
+  bool _loading = true;
+  bool _copied = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _issue();
+  }
+
+  Future<void> _issue() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+      _copied = false;
+    });
+    try {
+      final invite = await _api.createInviteCode(widget.userId);
+      if (!mounted) return;
+      setState(() {
+        _invite = invite;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = _errorText(e);
+        _loading = false;
+      });
+    }
+  }
 
   Future<void> _copy() async {
-    await Clipboard.setData(const ClipboardData(text: code));
-    setState(() => copied = true);
+    final code = _invite?.inviteCode;
+    if (code == null) return;
+    await Clipboard.setData(ClipboardData(text: code));
+    if (mounted) setState(() => _copied = true);
+  }
+
+  Future<void> _share() async {
+    final code = _invite?.inviteCode;
+    if (code == null) return;
+    await SharePlus.instance.share(
+      ShareParams(
+        subject: 'ReMory 가족 초대',
+        text: 'ReMory 가족 초대 코드예요.\n\n$code\n\n앱에서 이 코드를 입력하면 연결돼요.',
+      ),
+    );
+  }
+
+  /// 서버가 준 만료 시각으로 안내 문구를 만든다.
+  String get _validityText {
+    final at = _invite?.expiresAt;
+    if (at == null) return '가족이 ReMory 앱에서 이 코드를 입력하면 연결돼요.';
+    // 서버가 더 길게 줘도 코드는 하루까지만 쓰는 값이라 그렇게 안내한다.
+    final left = _atMostADay(at.difference(DateTime.now()));
+    if (left.isNegative) return '만료된 코드예요. 새 코드를 발급해 주세요.';
+    final hours = left.inHours;
+    final text = hours >= 1 ? '$hours시간' : '${left.inMinutes}분';
+    return '$text 뒤 만료돼요.\n가족이 ReMory 앱에서 이 코드를 입력하면 연결돼요.';
   }
 
   @override
@@ -1402,7 +1517,7 @@ class _FamilyInviteScreenState extends State<FamilyInviteScreen> {
     return _PhoneFrame(
       child: Column(
         children: [
-          const _TopHeader(title: '가족 초대'),
+          _TopHeader(title: '가족 초대', onBack: () => Navigator.pop(context)),
           Expanded(
             child: ListView(
               physics: const BouncingScrollPhysics(),
@@ -1417,46 +1532,60 @@ class _FamilyInviteScreenState extends State<FamilyInviteScreen> {
                   ),
                 ),
                 SizedBox(height: 46.h),
-                GestureDetector(
-                  onTap: _copy,
-                  child: Container(
-                    padding: const EdgeInsets.all(26),
-                    decoration: _cardDecoration(shadow: true),
-                    child: Column(
-                      children: [
-                        Text('초대 코드', style: _tiny()),
-                        SizedBox(height: 14.h),
-                        const Text(
-                          code,
-                          style: TextStyle(
-                            fontSize: 34,
-                            color: _brown,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 1.5,
-                          ),
-                        ),
-                        SizedBox(height: 16.h),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 9,
-                          ),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF8EFE6),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
+                Container(
+                  width: double.infinity,
+                  padding: EdgeInsets.symmetric(vertical: 28.h),
+                  decoration: _cardDecoration(),
+                  child: Column(
+                    children: [
+                      if (_loading)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 10),
+                          child: CircularProgressIndicator(color: _brown),
+                        )
+                      else if (_error != null)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
                           child: Text(
-                            '48시간 동안 유효해요.\n가족이 ReMory 앱에서 이 코드를 입력하면 연결돼요.',
+                            _error!,
                             textAlign: TextAlign.center,
-                            style: _tiny(),
+                            style: _caption(),
+                          ),
+                        )
+                      else
+                        GestureDetector(
+                          onTap: _copy,
+                          child: Text(
+                            _invite!.inviteCode,
+                            style: const TextStyle(
+                              fontSize: 30,
+                              fontWeight: FontWeight.w900,
+                              color: _brown,
+                              letterSpacing: 2,
+                            ),
                           ),
                         ),
-                      ],
-                    ),
+                      SizedBox(height: 18.h),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 9,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8EFE6),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          _validityText,
+                          textAlign: TextAlign.center,
+                          style: _tiny(),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
                 SizedBox(height: 30.h),
-                if (copied)
+                if (_copied)
                   Center(
                     child: Container(
                       padding: const EdgeInsets.symmetric(
@@ -1479,17 +1608,30 @@ class _FamilyInviteScreenState extends State<FamilyInviteScreen> {
                   ),
                 SizedBox(height: 18.h),
                 ElevatedButton.icon(
-                  onPressed: _copy,
+                  onPressed: _invite == null ? null : _copy,
                   icon: const Icon(Icons.copy),
                   label: const Text('복사하기'),
                   style: _primaryButtonStyle(),
                 ),
                 SizedBox(height: 10.h),
                 ElevatedButton.icon(
-                  onPressed: () {},
+                  onPressed: _invite == null ? null : _share,
                   icon: const Icon(Icons.share_outlined),
                   label: const Text('공유하기'),
                   style: _softButtonStyle(),
+                ),
+                SizedBox(height: 10.h),
+                TextButton.icon(
+                  onPressed: _loading ? null : _issue,
+                  icon: const Icon(Icons.refresh, size: 18, color: _muted),
+                  label: Text(
+                    '새 코드 발급',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: _muted,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -1512,17 +1654,14 @@ class NotificationSettingsScreen extends StatefulWidget {
 
 class _NotificationSettingsScreenState
     extends State<NotificationSettingsScreen> {
-  bool _showSettings = false;
-
   @override
   Widget build(BuildContext context) {
-    if (_showSettings) return const SettingsFlow();
     return _PhoneFrame(
       child: _AsyncView<MyProfile>(
         load: _api.myProfile,
         builder: (context, profile, reload) => _NotificationSettingsBody(
           profile: profile,
-          onBack: () => setState(() => _showSettings = true),
+          onBack: () => Navigator.pop(context),
         ),
       ),
     );
@@ -1630,18 +1769,15 @@ class QuietHoursScreen extends StatefulWidget {
 }
 
 class _QuietHoursScreenState extends State<QuietHoursScreen> {
-  bool _showSettings = false;
-
   @override
   Widget build(BuildContext context) {
-    if (_showSettings) return const SettingsFlow();
     return _PhoneFrame(
       child: _AsyncView<DndSettings>(
         load: () => _api.dnd(widget.deviceId),
         builder: (context, dnd, reload) => _QuietHoursBody(
           deviceId: widget.deviceId,
           dnd: dnd,
-          onBack: () => setState(() => _showSettings = true),
+          onBack: () => Navigator.pop(context),
         ),
       ),
     );
@@ -1836,11 +1972,8 @@ class MedicationTimeScreen extends StatefulWidget {
 }
 
 class _MedicationTimeScreenState extends State<MedicationTimeScreen> {
-  bool _showSettings = false;
-
   @override
   Widget build(BuildContext context) {
-    if (_showSettings) return const SettingsFlow();
     return _PhoneFrame(
       child: _AsyncView<MedicationList>(
         load: () => _api.medications(widget.deviceId),
@@ -1848,7 +1981,7 @@ class _MedicationTimeScreenState extends State<MedicationTimeScreen> {
           deviceId: widget.deviceId,
           list: list,
           reload: reload,
-          onBack: () => setState(() => _showSettings = true),
+          onBack: () => Navigator.pop(context),
         ),
       ),
     );
@@ -2163,7 +2296,10 @@ class _AsyncViewState<T> extends State<_AsyncView<T>> {
   late Future<T> _future = widget.load();
 
   Future<void> _reload() async {
-    setState(() => _future = widget.load());
+    // 화살표 본문으로 쓰면 대입식의 값(Future)이 반환돼 setState 가 거부한다.
+    setState(() {
+      _future = widget.load();
+    });
     try {
       await _future;
     } catch (_) {
@@ -2280,13 +2416,6 @@ void _push(BuildContext context, Widget page) {
   Navigator.push(context, MaterialPageRoute(builder: (_) => page));
 }
 
-void _replaceRoot(BuildContext context, Widget page) {
-  Navigator.of(
-    context,
-    rootNavigator: true,
-  ).pushAndRemoveUntil(MaterialPageRoute(builder: (_) => page), (_) => false);
-}
-
 String _hourText(int hour) {
   final period = hour < 12 ? '오전' : '오후';
   final display = hour % 12 == 0 ? 12 : hour % 12;
@@ -2333,7 +2462,13 @@ class _TopHeader extends StatelessWidget {
   final VoidCallback? onAction;
 
   void _goBack(BuildContext context) {
-    _replaceRoot(context, const SettingsFlow());
+    // 셸 전체를 갈아끼우면 탭 상태가 날아간다. 밀려 올라온 화면이면 pop 하고,
+    // 아니면 설정 탭으로 돌린다.
+    if (Navigator.canPop(context)) {
+      Navigator.pop(context);
+      return;
+    }
+    MainShellScope.maybeOf(context)?.selectTab(AppTab.settings);
   }
 
   @override
@@ -2492,64 +2627,6 @@ class _MenuRow extends StatelessWidget {
             const Icon(Icons.chevron_right, color: _muted, size: 18),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _SettingsNavBar extends StatelessWidget {
-  const _SettingsNavBar({required this.onSelected});
-
-  final ValueChanged<int> onSelected;
-
-  @override
-  Widget build(BuildContext context) {
-    final items = [
-      (Icons.home_outlined, '홈', false, 0),
-      (Icons.chat_bubble_outline, '대화', false, 1),
-      (Icons.image_outlined, '추억', false, 2),
-      (Icons.settings_outlined, '설정', true, 3),
-    ];
-
-    return Container(
-      height: 62,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      decoration: _cardDecoration(shadow: true),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          for (final item in items)
-            Material(
-              color: Colors.transparent,
-              child: InkWell(
-                borderRadius: BorderRadius.circular(12),
-                onTap: item.$3 ? null : () => onSelected(item.$4),
-                child: SizedBox(
-                  width: 58,
-                  height: 58,
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        item.$1,
-                        size: 20,
-                        color: item.$3 ? _yellow : _muted,
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        item.$2,
-                        style: TextStyle(
-                          fontSize: 9,
-                          color: item.$3 ? _brown : _muted,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-        ],
       ),
     );
   }
@@ -3121,13 +3198,14 @@ class _NumberStepper extends StatelessWidget {
   }
 }
 
-class _VoiceRow extends StatelessWidget {
+class _VoiceRow extends StatefulWidget {
   const _VoiceRow({
     required this.name,
     required this.subtitle,
     this.checked = false,
     this.progress,
     this.onTap,
+    this.audioUrl,
   });
   final String name;
   final String subtitle;
@@ -3135,8 +3213,60 @@ class _VoiceRow extends StatelessWidget {
   final double? progress;
   final VoidCallback? onTap;
 
+  /// 등록한 원본 녹음. 있으면 재생 버튼이 붙는다.
+  final String? audioUrl;
+
+  @override
+  State<_VoiceRow> createState() => _VoiceRowState();
+}
+
+class _VoiceRowState extends State<_VoiceRow> {
+  AudioPlayer? _player;
+  StreamSubscription<void>? _completeSubscription;
+  bool _playing = false;
+
+  @override
+  void dispose() {
+    unawaited(_completeSubscription?.cancel());
+    unawaited(_player?.dispose());
+    super.dispose();
+  }
+
+  Future<void> _toggle() async {
+    final url = widget.audioUrl;
+    if (url == null || url.isEmpty) return;
+
+    final player = _player ??= AudioPlayer();
+    _completeSubscription ??= player.onPlayerComplete.listen((_) {
+      if (mounted) setState(() => _playing = false);
+    });
+
+    try {
+      if (_playing) {
+        await player.pause();
+        if (mounted) setState(() => _playing = false);
+        return;
+      }
+      if (player.state == PlayerState.paused) {
+        await player.resume();
+      } else {
+        await player.play(UrlSource(url));
+      }
+      if (mounted) setState(() => _playing = true);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _playing = false);
+      _toast(context, '재생하지 못했어요.');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final name = widget.name;
+    final subtitle = widget.subtitle;
+    final checked = widget.checked;
+    final progress = widget.progress;
+    final onTap = widget.onTap;
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
@@ -3168,6 +3298,18 @@ class _VoiceRow extends StatelessWidget {
                 ],
               ),
             ),
+            if ((widget.audioUrl ?? '').isNotEmpty)
+              IconButton(
+                tooltip: _playing ? '멈추기' : '들어보기',
+                onPressed: _toggle,
+                icon: Icon(
+                  _playing ? Icons.pause_circle_filled : Icons.play_circle_fill,
+                  color: _brown,
+                  size: 28,
+                ),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+              ),
             if (checked) const Icon(Icons.check_circle, color: _brown),
           ],
         ),
