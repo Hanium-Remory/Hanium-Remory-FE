@@ -10,6 +10,7 @@ import '../services/session_store.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../8. vocie/voice_record_flow.dart';
 import '../main_shell.dart';
 import '../services/settings_api.dart';
 
@@ -903,7 +904,8 @@ class _DollSettingsBody extends StatelessWidget {
           ),
         SizedBox(height: 10.h),
         OutlinedButton.icon(
-          onPressed: () => _toast(context, '목소리 등록은 음성 녹음 화면에서 준비 중이에요.'),
+          onPressed: () =>
+              _openAndReload(context, const VoiceRecordFlow(), reload),
           icon: const Icon(Icons.add),
           label: const Text('새 목소리 등록'),
           style: OutlinedButton.styleFrom(
@@ -1202,6 +1204,8 @@ class _ElderInfoEditScreenState extends State<ElderInfoEditScreen> {
         ),
         note: note.text.trim(),
       );
+      // 어머님/아버님 호칭이 앱 곳곳에 쓰인다. 저장이 끝난 뒤에 맞춘다.
+      await SessionStore.setElderGender(gender == '남성' ? 'male' : 'female');
       if (!mounted) return;
       _savedToast(context);
     } catch (e) {
@@ -1245,12 +1249,7 @@ class _ElderInfoEditScreenState extends State<ElderInfoEditScreen> {
                             child: _ChoiceChipButton(
                               text: item,
                               selected: gender == item,
-                              onTap: () {
-                                SessionStore.setElderGender(
-                                  item == '남성' ? 'male' : 'female',
-                                );
-                                setState(() => gender = item);
-                              },
+                              onTap: () => setState(() => gender = item),
                             ),
                           ),
                         ),
@@ -1860,80 +1859,94 @@ class _QuietHoursBodyState extends State<_QuietHoursBody> {
               ),
               SizedBox(height: 18.h),
               _Label('시간 설정'),
-              Container(
-                padding: const EdgeInsets.all(18),
-                decoration: _cardDecoration(),
-                child: Column(
-                  children: [
-                    Row(
-                      children: const [
-                        Expanded(
-                          child: Center(
-                            child: Text(
-                              '시작',
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: _muted,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                          ),
-                        ),
-                        Expanded(
-                          child: Center(
-                            child: Text(
-                              '끝',
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: _muted,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    SizedBox(height: 12.h),
-                    Row(
+              // 방해 금지를 쓰지 않으면 시각은 의미가 없다. 값은 그대로 보여
+              // 주되(다시 켰을 때 뭘로 돌아가는지 알 수 있게) 손대지는 못한다.
+              IgnorePointer(
+                ignoring: !enabled,
+                child: Opacity(
+                  opacity: enabled ? 1 : 0.4,
+                  child: Container(
+                    padding: const EdgeInsets.all(18),
+                    decoration: _cardDecoration(),
+                    child: Column(
                       children: [
-                        Expanded(
-                          child: _HourStepper(
-                            hour: start,
-                            onAdd: () =>
-                                setState(() => start = (start + 1) % 24),
-                            onSub: () =>
-                                setState(() => start = (start + 23) % 24),
-                          ),
+                        Row(
+                          children: const [
+                            Expanded(
+                              child: Center(
+                                child: Text(
+                                  '시작',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: _muted,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            Expanded(
+                              child: Center(
+                                child: Text(
+                                  '끝',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: _muted,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
-                        const Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 14),
-                          child: Icon(
-                            Icons.arrow_forward,
-                            color: _muted,
-                            size: 18,
-                          ),
+                        SizedBox(height: 12.h),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _HourStepper(
+                                hour: start,
+                                onAdd: () =>
+                                    setState(() => start = (start + 1) % 24),
+                                onSub: () =>
+                                    setState(() => start = (start + 23) % 24),
+                              ),
+                            ),
+                            const Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 14),
+                              child: Icon(
+                                Icons.arrow_forward,
+                                color: _muted,
+                                size: 18,
+                              ),
+                            ),
+                            Expanded(
+                              child: _HourStepper(
+                                hour: end,
+                                onAdd: () =>
+                                    setState(() => end = (end + 1) % 24),
+                                onSub: () =>
+                                    setState(() => end = (end + 23) % 24),
+                              ),
+                            ),
+                          ],
                         ),
-                        Expanded(
-                          child: _HourStepper(
-                            hour: end,
-                            onAdd: () => setState(() => end = (end + 1) % 24),
-                            onSub: () => setState(() => end = (end + 23) % 24),
+                        SizedBox(height: 16.h),
+                        Text(
+                          '${_hourText(start)}부터 다음날 ${_hourText(end)}까지',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: _brown,
+                            fontWeight: FontWeight.w900,
                           ),
                         ),
                       ],
                     ),
-                    SizedBox(height: 16.h),
-                    Text(
-                      '${_hourText(start)}부터 다음날 ${_hourText(end)}까지',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: _brown,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
+              if (!enabled) ...[
+                SizedBox(height: 8.h),
+                Text('방해 금지를 켜면 시간을 정할 수 있어요.', style: _caption()),
+              ],
               SizedBox(height: 18.h),
               _Label('예외'),
               _SectionCard(
