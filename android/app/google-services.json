@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "269788002758",
+    "project_id": "remory-hanium-app-2af99",
+    "storage_bucket": "remory-hanium-app-2af99.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:269788002758:android:6fed2c3831fd7f98ab9ac7",
+        "android_client_info": {
+          "package_name": "com.example.flutter_application_1"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDEGl--q7UooSKK3TlgjZ_434PD107_iEg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

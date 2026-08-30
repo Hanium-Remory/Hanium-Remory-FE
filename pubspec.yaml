@@ -43,6 +43,10 @@ dependencies:
   cupertino_icons: ^1.0.8
   shared_preferences: ^2.5.5
   record: ^7.1.1
+  firebase_core: ^4.14.0
+  firebase_auth: ^6.6.1
+  share_plus: ^13.3.0
+  audioplayers: ^6.8.1
 
 dev_dependencies:
   flutter_test:
@@ -65,6 +69,25 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  # 앱 전체 기본 글꼴. main.dart 의 ThemeData(fontFamily: 'Pretendard') 가
+  # 이 선언을 찾는다. 파일이 없으면 조용히 시스템 글꼴로 떨어진다.
+  # 화면에서 w800·w900 을 자주 써서 굵은 웨이트까지 함께 넣는다.
+  fonts:
+    - family: Pretendard
+      fonts:
+        - asset: assets/fonts/Pretendard-Regular.otf
+          weight: 400
+        - asset: assets/fonts/Pretendard-Medium.otf
+          weight: 500
+        - asset: assets/fonts/Pretendard-SemiBold.otf
+          weight: 600
+        - asset: assets/fonts/Pretendard-Bold.otf
+          weight: 700
+        - asset: assets/fonts/Pretendard-ExtraBold.otf
+          weight: 800
+        - asset: assets/fonts/Pretendard-Black.otf
+          weight: 900
 
   # To add assets to your application, add an assets section, like this:
   # assets:
