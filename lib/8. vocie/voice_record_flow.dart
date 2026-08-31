@@ -189,11 +189,7 @@ class _VoiceRecordFlowState extends State<VoiceRecordFlow> {
   Widget build(BuildContext context) {
     final pages = [
       VoiceIntroScreen(onStart: _next, elderName: _elderName),
-      VoiceRecordingScreen(
-        onBack: _back,
-        onDone: _finishRecording,
-        scriptIndex: 0,
-      ),
+      VoiceRecordingScreen(onBack: _back, onDone: _finishRecording),
       VoiceCheckScreen(
         onBack: _back,
         onRetry: _restartRecording,
@@ -325,12 +321,10 @@ class VoiceRecordingScreen extends StatefulWidget {
     super.key,
     required this.onBack,
     required this.onDone,
-    required this.scriptIndex,
   });
 
   final VoidCallback onBack;
   final void Function(int seconds, Uint8List audio) onDone;
-  final int scriptIndex;
 
   @override
   State<VoiceRecordingScreen> createState() => _VoiceRecordingScreenState();
@@ -353,19 +347,12 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen> {
   Completer<void>? _audioDone;
   Timer? _timer;
   int _seconds = 0;
-  int _scriptIndex = 0;
   bool _isRecording = false;
   bool _isStopping = false;
   String? _recordingError;
 
-  static const _scripts = [
-    '엄마, 저예요. 오늘은 어떻게 보내셨어요? 점심은 뭐 드셨고요? 따뜻하게 드셔야 해요. 어제 보내드린 영양제는 잘 챙겨 드시고 계시죠? 잊지 마시고요. 저는 오늘 회사에서 회의가 많아서 좀 정신이 없었어요. 점심엔 김치찌개를 먹었는데, 엄마가 끓여주시던 그 맛이 자꾸 생각나더라고요. 다음 주말에 가면 손주도 데려갈게요. 사랑해요, 엄마.',
-    '엄마, 작년 가을에 우리 같이 갔던 그 공원 기억나세요? 단풍이 정말 예뻤잖아요. 거기서 도시락도 먹고 사진도 많이 찍었었지요. 엄마가 싸 주신 김밥을 손주가 다섯 개나 먹었잖아요. 햇살이 따뜻하고 바람도 살랑살랑 불어서 참 좋았어요.',
-    '엄마, 오늘 아침에는 날씨가 참 맑았어요. 창문을 열어 놓으니 시원한 바람이 들어오더라고요. 엄마도 식사 잘 챙겨 드시고 잠깐 산책해 보세요. 무리하지 마시고 천천히 다녀오세요.',
-    '엄마, 이번 주말에는 가족들이 함께 찾아갈게요. 맛있는 것도 준비하고 옛날 사진도 같이 볼까요? 손주가 할머니께 보여드릴 그림을 열심히 그리고 있어요. 곧 만나서 즐겁게 이야기 나눠요.',
-  ];
-
-  static const _scriptTitles = ['일상 안부', '옛 추억', '아침 인사', '가족 약속'];
+  static const _script =
+      '엄마, 저예요. 오늘은 어떻게 보내셨어요? 점심은 뭐 드셨고요? 따뜻하게 드셔야 해요. 어제 보내드린 영양제는 잘 챙겨 드시고 계시죠? 잊지 마시고요. 저는 오늘 회사에서 회의가 많아서 좀 정신이 없었어요. 점심엔 김치찌개를 먹었는데, 엄마가 끓여주시던 그 맛이 자꾸 생각나더라고요. 다음 주말에 가면 손주도 데려갈게요. 사랑해요, 엄마.';
 
   @override
   void initState() {
@@ -506,7 +493,6 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final script = _scripts[_scriptIndex];
     final progress = (_seconds / 300).clamp(0.0, 1.0);
 
     return Scaffold(
@@ -544,11 +530,29 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen> {
                 ),
               ),
               SizedBox(height: 14.h),
+              Container(
+                width: double.infinity,
+                padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 9.h),
+                decoration: BoxDecoration(
+                  color: _softYellow,
+                  borderRadius: BorderRadius.circular(10.r),
+                ),
+                child: Text(
+                  '아래 대본을 처음부터 끝까지 모두 읽어주세요.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 12.sp,
+                    color: _brown,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              SizedBox(height: 12.h),
               Row(
                 children: [
-                  Text('예시 ${_scriptIndex + 1} / 4', style: _label()),
+                  Text('고정 대본', style: _label()),
                   SizedBox(width: 8.w),
-                  Text(_scriptTitles[_scriptIndex], style: _label(size: 13.sp)),
+                  Text('일상 안부', style: _label(size: 13.sp)),
                   Container(
                     margin: EdgeInsets.only(left: 8.w),
                     padding: EdgeInsets.symmetric(
@@ -562,25 +566,6 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen> {
                     child: Text('약 2분', style: _tiny(color: _brown)),
                   ),
                   const Spacer(),
-                  GestureDetector(
-                    onTap: () {
-                      setState(() {
-                        _scriptIndex = (_scriptIndex + 1) % _scripts.length;
-                      });
-                    },
-                    child: Container(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: 12.w,
-                        vertical: 7.h,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(99.r),
-                        border: Border.all(color: _line),
-                      ),
-                      child: Text('다음 글  >', style: _tiny(color: _muted)),
-                    ),
-                  ),
                 ],
               ),
               SizedBox(height: 12.h),
@@ -596,7 +581,7 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen> {
                   child: SingleChildScrollView(
                     physics: const BouncingScrollPhysics(),
                     child: Text(
-                      script,
+                      _script,
                       style: TextStyle(
                         fontSize: 17.sp,
                         height: 1.72,
@@ -622,10 +607,7 @@ class _VoiceRecordingScreenState extends State<VoiceRecordingScreen> {
               Row(
                 children: [
                   Expanded(
-                    child: _Waveform(
-                      active: _isRecording,
-                      levels: _levels,
-                    ),
+                    child: _Waveform(active: _isRecording, levels: _levels),
                   ),
                   SizedBox(width: 10.w),
                   SizedBox(
@@ -729,9 +711,9 @@ class _VoiceCheckScreenState extends State<VoiceCheckScreen> {
     } catch (error) {
       if (!mounted) return;
       setState(() => _isPlaying = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('재생하지 못했어요: $error')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('재생하지 못했어요: $error')));
     }
   }
 
@@ -992,9 +974,7 @@ class _Header extends StatelessWidget {
                 onBack ??
                 () => Navigator.of(context, rootNavigator: true)
                     .pushAndRemoveUntil(
-                      MaterialPageRoute(
-                        builder: (_) => const MainShell(),
-                      ),
+                      MaterialPageRoute(builder: (_) => const MainShell()),
                       (_) => false,
                     ),
             icon: Icon(Icons.chevron_left, size: 28.sp, color: _dark),
