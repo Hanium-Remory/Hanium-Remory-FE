@@ -565,10 +565,13 @@ class _MyProfileBodyState extends State<_MyProfileBody> {
 /// 폰에서 발급한 경우에는 발급됨으로 보이지만 값은 알 수 없어서, 확인하려면
 /// 재발급을 받아야 한다(그러면 인형에 넣어둔 값도 다시 넣어야 한다).
 class _DeviceTokenCard extends StatefulWidget {
-  const _DeviceTokenCard({required this.deviceId});
+  const _DeviceTokenCard({required this.deviceId, this.issued});
 
   /// 아직 인형을 연결하지 않았으면 null.
   final int? deviceId;
+
+  /// 이미 인형 설정을 불러온 화면에서 넘겨주면 같은 조회를 다시 하지 않는다.
+  final bool? issued;
 
   @override
   State<_DeviceTokenCard> createState() => _DeviceTokenCardState();
@@ -595,19 +598,20 @@ class _DeviceTokenCardState extends State<_DeviceTokenCard> {
       return;
     }
     try {
-      final settings = await _api.deviceSettings(deviceId);
+      final issued =
+          widget.issued ?? (await _api.deviceSettings(deviceId)).hasDeviceToken;
       var token = await DeviceTokenStore.read(deviceId);
       var issuedAt = await DeviceTokenStore.issuedAt(deviceId);
       // 서버에 토큰이 없는데 폰에만 남아 있으면(기기를 다시 등록한 경우 등)
       // 그 값은 이미 못 쓰는 값이라 지운다.
-      if (!settings.hasDeviceToken && token != null) {
+      if (!issued && token != null) {
         await DeviceTokenStore.clear(deviceId);
         token = null;
         issuedAt = null;
       }
       if (!mounted) return;
       setState(() {
-        _issuedOnServer = settings.hasDeviceToken;
+        _issuedOnServer = issued;
         _token = token;
         _issuedAt = issuedAt;
         _loading = false;
@@ -1226,6 +1230,12 @@ class _DollSettingsBody extends StatelessWidget {
               ),
             ),
           ],
+        ),
+        SizedBox(height: 18.h),
+        _Label('기기 토큰'),
+        _DeviceTokenCard(
+          deviceId: device.deviceId,
+          issued: device.hasDeviceToken,
         ),
         SizedBox(height: 16.h),
       ],
