@@ -724,6 +724,23 @@ class _DeviceTokenCardState extends State<_DeviceTokenCard> {
             _StatusPill(issued: _issuedOnServer),
           ],
         ),
+        SizedBox(height: 8.h),
+        // 인형은 /devices/{deviceId}/... 로 호출하므로 토큰만으로는 부족하다.
+        Row(
+          children: [
+            Text('기기 ID', style: _tiny()),
+            const Spacer(),
+            SelectableText(
+              '${widget.deviceId}',
+              style: const TextStyle(
+                fontSize: 12,
+                color: _dark,
+                fontWeight: FontWeight.w800,
+                fontFamily: 'monospace',
+              ),
+            ),
+          ],
+        ),
         SizedBox(height: 10.h),
         if (token != null) ...[
           Row(
