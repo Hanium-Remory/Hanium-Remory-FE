@@ -12,6 +12,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../8. vocie/voice_record_flow.dart';
 import '../main_shell.dart';
+import '../services/device_token_store.dart';
 import '../services/settings_api.dart';
 
 const Color _bg = Color(0xFFFBF6EE);
@@ -548,7 +549,281 @@ class _MyProfileBodyState extends State<_MyProfileBody> {
           ],
         ),
         SizedBox(height: 16.h),
+        _Label('기기 토큰'),
+        _DeviceTokenCard(deviceId: elder?.deviceId),
+        SizedBox(height: 16.h),
       ],
+    );
+  }
+}
+
+/// 인형에 넣어 줄 X-Device-Token 을 확인·발급하는 카드.
+///
+/// 서버는 발급 응답에서만 값을 내려주고 조회로는 알려주지 않는다. 그래서 이
+/// 폰에서 발급받은 값을 로컬에 저장해 두고 다시 보여주고, 서버의
+/// hasDeviceToken 으로는 "발급된 적 있는지"만 판단한다. 앱을 지웠거나 다른
+/// 폰에서 발급한 경우에는 발급됨으로 보이지만 값은 알 수 없어서, 확인하려면
+/// 재발급을 받아야 한다(그러면 인형에 넣어둔 값도 다시 넣어야 한다).
+class _DeviceTokenCard extends StatefulWidget {
+  const _DeviceTokenCard({required this.deviceId});
+
+  /// 아직 인형을 연결하지 않았으면 null.
+  final int? deviceId;
+
+  @override
+  State<_DeviceTokenCard> createState() => _DeviceTokenCardState();
+}
+
+class _DeviceTokenCardState extends State<_DeviceTokenCard> {
+  bool _loading = true;
+  bool _issuing = false;
+  bool _revealed = false;
+  bool _issuedOnServer = false;
+  String? _token;
+  DateTime? _issuedAt;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final deviceId = widget.deviceId;
+    if (deviceId == null) {
+      setState(() => _loading = false);
+      return;
+    }
+    try {
+      final settings = await _api.deviceSettings(deviceId);
+      var token = await DeviceTokenStore.read(deviceId);
+      var issuedAt = await DeviceTokenStore.issuedAt(deviceId);
+      // 서버에 토큰이 없는데 폰에만 남아 있으면(기기를 다시 등록한 경우 등)
+      // 그 값은 이미 못 쓰는 값이라 지운다.
+      if (!settings.hasDeviceToken && token != null) {
+        await DeviceTokenStore.clear(deviceId);
+        token = null;
+        issuedAt = null;
+      }
+      if (!mounted) return;
+      setState(() {
+        _issuedOnServer = settings.hasDeviceToken;
+        _token = token;
+        _issuedAt = issuedAt;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+      _toast(context, _errorText(e));
+    }
+  }
+
+  Future<void> _issue() async {
+    final deviceId = widget.deviceId;
+    if (deviceId == null || _issuing) return;
+
+    if (_issuedOnServer) {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          backgroundColor: _bg,
+          title: const Text(
+            '기기 토큰 재발급',
+            style: TextStyle(fontWeight: FontWeight.w900),
+          ),
+          content: Text(
+            '재발급하면 지금 인형에 들어 있는 토큰은 바로 무효가 돼요.\n'
+            '새로 나온 값을 인형에 다시 넣어야 합니다.',
+            style: _caption(),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('취소', style: TextStyle(color: _muted)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('재발급', style: TextStyle(color: _brown)),
+            ),
+          ],
+        ),
+      );
+      if (ok != true) return;
+    }
+
+    setState(() => _issuing = true);
+    try {
+      final token = await _api.issueDeviceToken(deviceId);
+      await DeviceTokenStore.save(deviceId, token);
+      if (!mounted) return;
+      setState(() {
+        _token = token;
+        _issuedAt = DateTime.now();
+        _issuedOnServer = true;
+        _revealed = true; // 방금 발급한 값은 바로 보여준다.
+      });
+      _toast(context, '새 기기 토큰을 발급했어요. 인형에 넣어 주세요.');
+    } catch (e) {
+      if (!mounted) return;
+      _toast(context, _errorText(e));
+    } finally {
+      if (mounted) setState(() => _issuing = false);
+    }
+  }
+
+  Future<void> _copy() async {
+    final token = _token;
+    if (token == null) return;
+    await Clipboard.setData(ClipboardData(text: token));
+    if (!mounted) return;
+    _toast(context, '기기 토큰을 복사했어요.');
+  }
+
+  /// 어깨너머로 보이지 않게 앞 6자만 남긴다.
+  String _mask(String token) => '${token.substring(0, 6)}${'•' * 18}';
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: _cardDecoration(),
+      child: _body(),
+    );
+  }
+
+  Widget _body() {
+    if (widget.deviceId == null) {
+      return Text(
+        '인형을 먼저 연결하면 기기 토큰을 발급할 수 있어요.',
+        style: _caption(),
+      );
+    }
+    if (_loading) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.symmetric(vertical: 8),
+          child: SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(color: _brown, strokeWidth: 2.5),
+          ),
+        ),
+      );
+    }
+
+    final token = _token;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text('인형 연결용 토큰', style: _tiny()),
+            const Spacer(),
+            _StatusPill(issued: _issuedOnServer),
+          ],
+        ),
+        SizedBox(height: 10.h),
+        if (token != null) ...[
+          Row(
+            children: [
+              Expanded(
+                child: SelectableText(
+                  _revealed ? token : _mask(token),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: _dark,
+                    fontWeight: FontWeight.w800,
+                    fontFamily: 'monospace',
+                  ),
+                ),
+              ),
+              IconButton(
+                onPressed: () => setState(() => _revealed = !_revealed),
+                icon: Icon(
+                  _revealed ? Icons.visibility_off : Icons.visibility,
+                  size: 18,
+                  color: _muted,
+                ),
+                tooltip: _revealed ? '가리기' : '보기',
+              ),
+              IconButton(
+                onPressed: _copy,
+                icon: const Icon(Icons.copy_rounded, size: 18, color: _muted),
+                tooltip: '복사',
+              ),
+            ],
+          ),
+          if (_issuedAt != null)
+            Text('${_dateText(_issuedAt!)} 에 발급', style: _tiny()),
+          SizedBox(height: 4.h),
+          Text('이 폰에 저장된 값이라 다른 기기에서는 보이지 않아요.', style: _tiny()),
+        ] else
+          Text(
+            _issuedOnServer
+                ? '이미 발급된 토큰이 있지만 이 폰에는 저장돼 있지 않아요.\n'
+                      '값을 보려면 재발급을 받아야 해요.'
+                : '아직 발급되지 않았어요. 인형에 넣을 토큰을 발급해 주세요.',
+            style: _caption(),
+          ),
+        SizedBox(height: 12.h),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton(
+            onPressed: _issuing ? null : _issue,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _brown,
+              foregroundColor: Colors.white,
+              disabledBackgroundColor: _line,
+              elevation: 0,
+              minimumSize: const Size(0, 40),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            child: Text(
+              _issuing
+                  ? '발급 중...'
+                  : (_issuedOnServer ? '재발급' : '발급받기'),
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w900),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _dateText(DateTime when) {
+    final local = when.toLocal();
+    String two(int v) => v.toString().padLeft(2, '0');
+    return '${local.year}.${two(local.month)}.${two(local.day)} '
+        '${two(local.hour)}:${two(local.minute)}';
+  }
+}
+
+class _StatusPill extends StatelessWidget {
+  const _StatusPill({required this.issued});
+
+  final bool issued;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = issued ? _green : _muted;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        issued ? '발급됨' : '미발급',
+        style: TextStyle(
+          fontSize: 10,
+          color: color,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
     );
   }
 }
