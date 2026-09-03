@@ -211,6 +211,16 @@ class SettingsApi {
   Future<DeviceSettings> deviceSettings(int deviceId) async =>
       DeviceSettings.fromJson(await _get('/devices/$deviceId/settings'));
 
+  /// 인형이 서버에 붙을 때 쓰는 X-Device-Token 을 새로 발급받는다.
+  ///
+  /// 서버는 이 응답에서만 값을 내려준다(조회 API 에는 안 실린다). 호출하는
+  /// 순간 이전 토큰은 무효가 되므로, 이미 인형에 넣어둔 값이 있으면 다시
+  /// 넣어야 한다. 발급 여부만 알고 싶으면 [DeviceSettings.hasDeviceToken].
+  Future<String> issueDeviceToken(int deviceId) async {
+    final d = await _send('POST', '/devices/$deviceId/token');
+    return (d as Map<String, dynamic>)['deviceToken'] as String;
+  }
+
   Future<DeviceSettings> updateDeviceSettings(
     int deviceId, {
     String? name,
@@ -1249,6 +1259,7 @@ class DeviceSettings {
     required this.batteryHoursLeft,
     required this.volume,
     required this.medicationCheck,
+    required this.hasDeviceToken,
     required this.defaultVoiceId,
     required this.voices,
     required this.pairedAt,
@@ -1262,6 +1273,7 @@ class DeviceSettings {
     batteryHoursLeft: json['batteryHoursLeft'] as int,
     volume: json['volume'] as int,
     medicationCheck: json['medicationCheck'] == true,
+    hasDeviceToken: json['hasDeviceToken'] == true,
     defaultVoiceId: json['defaultVoiceId'] as int?,
     voices: (json['voices'] as List)
         .map((e) => DeviceVoice.fromJson(e as Map<String, dynamic>))
@@ -1278,6 +1290,9 @@ class DeviceSettings {
   final int batteryHoursLeft;
   final int volume;
   final bool medicationCheck;
+
+  /// 기기 토큰이 발급된 적 있는지. 값 자체는 발급 응답에서만 볼 수 있다.
+  final bool hasDeviceToken;
   final int? defaultVoiceId;
   final List<DeviceVoice> voices;
   final DateTime? pairedAt;
