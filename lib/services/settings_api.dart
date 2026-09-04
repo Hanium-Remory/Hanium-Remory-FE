@@ -667,6 +667,7 @@ dynamic _mockSettingsResponse(
       'deviceId': 1,
       'name': body?['name'] ?? '모리',
       'connected': true,
+      'inConversation': false,
       'batteryLevel': 82,
       'batteryHoursLeft': 18,
       'volume': body?['volume'] ?? 60,
@@ -899,6 +900,7 @@ class HomeDevice {
     required this.deviceId,
     required this.name,
     required this.connected,
+    required this.inConversation,
     required this.batteryLevel,
     required this.batteryHoursLeft,
   });
@@ -907,6 +909,7 @@ class HomeDevice {
     deviceId: json['deviceId'] as int,
     name: (json['name'] as String?) ?? '인형',
     connected: json['connected'] == true,
+    inConversation: json['inConversation'] == true,
     batteryLevel: (json['batteryLevel'] as int?) ?? 0,
     batteryHoursLeft: (json['batteryHoursLeft'] as int?) ?? 0,
   );
@@ -914,6 +917,10 @@ class HomeDevice {
   final int deviceId;
   final String name;
   final bool connected;
+
+  /// 인형이 어르신 말을 듣고 있는 중(음성인식 시작~대화 종료). 서버가 인형의
+  /// 트리거를 받아 내려준다. 인형이 꺼지면 서버가 알아서 false 로 준다.
+  final bool inConversation;
   final int batteryLevel;
   final int batteryHoursLeft;
 }
@@ -1266,6 +1273,7 @@ class DeviceSettings {
     required this.deviceId,
     required this.name,
     required this.connected,
+    required this.inConversation,
     required this.batteryLevel,
     required this.batteryHoursLeft,
     required this.volume,
@@ -1281,6 +1289,7 @@ class DeviceSettings {
     deviceId: json['deviceId'] as int,
     name: json['name'] as String,
     connected: json['connected'] == true,
+    inConversation: json['inConversation'] == true,
     batteryLevel: json['batteryLevel'] as int,
     batteryHoursLeft: json['batteryHoursLeft'] as int,
     volume: json['volume'] as int,
@@ -1300,6 +1309,9 @@ class DeviceSettings {
   final int deviceId;
   final String name;
   final bool connected;
+
+  /// 인형이 지금 어르신과 대화 중인지(음성인식 시작~종료).
+  final bool inConversation;
   final int batteryLevel;
   final int batteryHoursLeft;
   final int volume;

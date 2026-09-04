@@ -1124,16 +1124,26 @@ class _DollSettingsBody extends StatelessWidget {
                   vertical: 6,
                 ),
                 decoration: BoxDecoration(
-                  color: device.connected
-                      ? const Color(0xFFE7F6D8)
-                      : const Color(0xFFF1E4D9),
+                  color: !device.connected
+                      ? const Color(0xFFF1E4D9)
+                      : device.inConversation
+                      ? const Color(0xFFFFEFC6)
+                      : const Color(0xFFE7F6D8),
                   borderRadius: BorderRadius.circular(99),
                 ),
                 child: Text(
-                  device.connected ? '잘 연결되어 있어요' : '연결이 끊겼어요',
+                  !device.connected
+                      ? '연결이 끊겼어요'
+                      : device.inConversation
+                      ? '지금 대화 중이에요'
+                      : '잘 연결되어 있어요',
                   style: TextStyle(
                     fontSize: 10,
-                    color: device.connected ? _green : _brown,
+                    color: !device.connected
+                        ? _brown
+                        : device.inConversation
+                        ? const Color(0xFFB07B15)
+                        : _green,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
