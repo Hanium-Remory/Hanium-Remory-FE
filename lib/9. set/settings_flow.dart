@@ -2327,7 +2327,13 @@ class _MedicationBodyState extends State<_MedicationBody> {
     final previous = check;
     setState(() => check = value);
     try {
-      await _api.updateDeviceSettings(widget.deviceId, medicationCheck: value);
+      // 켜면 대답이 없을 때 kMedicationRecheckMinutes(10분) 뒤에 한 번 더
+      // 여쭤보고, 끄면 0을 보내 다시 묻지 않게 한다.
+      await _api.updateDeviceSettings(
+        widget.deviceId,
+        medicationCheck: value,
+        medicationRecheckMinutes: value ? kMedicationRecheckMinutes : 0,
+      );
     } catch (e) {
       if (!mounted) return;
       setState(() => check = previous);
@@ -2345,12 +2351,7 @@ class _MedicationBodyState extends State<_MedicationBody> {
   }
 
   Future<void> _add() async {
-    final draft = await showModalBottomSheet<_MedicationDraft>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (_) => const _AddMedicationSheet(),
-    );
+    final draft = await _openSheet();
     if (draft == null) return;
     try {
       await _api.addMedication(
@@ -2364,6 +2365,31 @@ class _MedicationBodyState extends State<_MedicationBody> {
       if (mounted) _toast(context, _errorText(e));
     }
   }
+
+  /// 등록된 약을 눌렀을 때: 같은 시트를 값이 채워진 채로 열어 수정한다.
+  Future<void> _edit(Medication med) async {
+    final draft = await _openSheet(initial: med);
+    if (draft == null) return;
+    try {
+      await _api.updateMedication(
+        med.medicationId,
+        name: draft.name,
+        time: draft.time,
+        timing: draft.timing,
+      );
+      await widget.reload();
+    } catch (e) {
+      if (mounted) _toast(context, _errorText(e));
+    }
+  }
+
+  Future<_MedicationDraft?> _openSheet({Medication? initial}) =>
+      showModalBottomSheet<_MedicationDraft>(
+        context: context,
+        backgroundColor: Colors.transparent,
+        isScrollControlled: true,
+        builder: (_) => _AddMedicationSheet(initial: initial),
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -2390,7 +2416,11 @@ class _MedicationBodyState extends State<_MedicationBody> {
                   child: Text('아직 등록한 약이 없어요.', style: _caption()),
                 ),
               for (final med in meds)
-                _MedicationTile(med: med, onDelete: () => _delete(med)),
+                _MedicationTile(
+                  med: med,
+                  onTap: () => _edit(med),
+                  onDelete: () => _delete(med),
+                ),
               TextButton.icon(
                 onPressed: _add,
                 icon: const Icon(Icons.add),
@@ -2403,7 +2433,9 @@ class _MedicationBodyState extends State<_MedicationBody> {
                 children: [
                   _SwitchLine(
                     title: '드셨는지 인형이 확인하기',
-                    subtitle: '"약 드셨어요?" 라고 여쭤봐요',
+                    subtitle:
+                        '"약 드셨어요?" 라고 여쭤보고, 대답이 없으면 '
+                        '$kMedicationRecheckMinutes분 뒤에 한 번 더 여쭤봐요',
                     value: check,
                     onChanged: _setCheck,
                   ),
@@ -2428,18 +2460,37 @@ class _MedicationDraft {
 }
 
 class _AddMedicationSheet extends StatefulWidget {
-  const _AddMedicationSheet();
+  const _AddMedicationSheet({this.initial});
+
+  /// 값이 있으면 수정, 없으면 새로 추가.
+  final Medication? initial;
 
   @override
   State<_AddMedicationSheet> createState() => _AddMedicationSheetState();
 }
 
 class _AddMedicationSheetState extends State<_AddMedicationSheet> {
-  final name = TextEditingController();
-  bool isAm = true;
-  int hour = 8; // 1~12
-  int minute = 0;
-  String timing = '식후';
+  late final name = TextEditingController(text: widget.initial?.name ?? '');
+  late bool isAm = _initialHour24 < 12;
+  late int hour = _initialHour24 % 12 == 0 ? 12 : _initialHour24 % 12; // 1~12
+  late int minute = _initialMinute;
+  late String timing = widget.initial?.timing ?? '식후';
+
+  bool get _isEdit => widget.initial != null;
+
+  /// 저장된 "HH:MM" 을 스테퍼가 쓰는 값으로. 형식이 깨져 있으면 08:00.
+  List<int> get _initialParts {
+    final parts = (widget.initial?.time ?? '08:00').split(':');
+    final h = parts.isEmpty ? null : int.tryParse(parts[0]);
+    final m = parts.length < 2 ? null : int.tryParse(parts[1]);
+    return [
+      h == null || h < 0 || h > 23 ? 8 : h,
+      m == null || m < 0 || m > 59 ? 0 : m,
+    ];
+  }
+
+  int get _initialHour24 => _initialParts[0];
+  int get _initialMinute => _initialParts[1];
 
   @override
   void dispose() {
@@ -2483,9 +2534,9 @@ class _AddMedicationSheetState extends State<_AddMedicationSheet> {
               ),
             ),
             SizedBox(height: 24.h),
-            const Text(
-              '새 약 추가',
-              style: TextStyle(
+            Text(
+              _isEdit ? '약 수정' : '새 약 추가',
+              style: const TextStyle(
                 fontSize: 20,
                 color: _dark,
                 fontWeight: FontWeight.w900,
@@ -2534,8 +2585,8 @@ class _AddMedicationSheetState extends State<_AddMedicationSheet> {
                   Expanded(
                     child: _NumberStepper(
                       text: '${minute.toString().padLeft(2, '0')}분',
-                      onAdd: () => setState(() => minute = (minute + 5) % 60),
-                      onSub: () => setState(() => minute = (minute + 55) % 60),
+                      onAdd: () => setState(() => minute = (minute + 1) % 60),
+                      onSub: () => setState(() => minute = (minute + 59) % 60),
                     ),
                   ),
                 ],
@@ -2579,7 +2630,7 @@ class _AddMedicationSheetState extends State<_AddMedicationSheet> {
                           )
                         : null,
                     style: _primaryButtonStyle(),
-                    child: const Text('추가'),
+                    child: Text(_isEdit ? '저장' : '추가'),
                   ),
                 ),
               ],
@@ -3203,7 +3254,7 @@ class _ChoiceChipButton extends StatelessWidget {
       child: Container(
         height: 42,
         alignment: Alignment.center,
-        padding: const EdgeInsets.symmetric(horizontal: 14),
+        padding: const EdgeInsets.symmetric(horizontal: 8),
         decoration: BoxDecoration(
           color: selected ? const Color(0xFFF8EFE8) : Colors.white,
           borderRadius: BorderRadius.circular(10),
@@ -3212,12 +3263,18 @@ class _ChoiceChipButton extends StatelessWidget {
             width: selected ? 1.4 : 1,
           ),
         ),
-        child: Text(
-          text,
-          style: TextStyle(
-            fontSize: 12,
-            color: selected ? _brown : _dark,
-            fontWeight: FontWeight.w900,
+        // '아무때나'처럼 긴 항목도 줄바꿈 없이 한 줄로 보이게 한다.
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            text,
+            maxLines: 1,
+            softWrap: false,
+            style: TextStyle(
+              fontSize: 12,
+              color: selected ? _brown : _dark,
+              fontWeight: FontWeight.w900,
+            ),
           ),
         ),
       ),
@@ -3761,46 +3818,55 @@ class _FamilyRow extends StatelessWidget {
 }
 
 class _MedicationTile extends StatelessWidget {
-  const _MedicationTile({required this.med, required this.onDelete});
+  const _MedicationTile({
+    required this.med,
+    required this.onTap,
+    required this.onDelete,
+  });
   final Medication med;
+  final VoidCallback onTap;
   final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(14),
-      decoration: _cardDecoration(),
-      child: Row(
-        children: [
-          _IconBox(
-            icon: Icons.medication_outlined,
-            fill: const Color(0xFFFFF3D2),
-            iconColor: _yellow,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(med.name, style: _rowTitle()),
-                const SizedBox(height: 3),
-                Text(
-                  '${med.time} · ${med.timing}',
-                  style: const TextStyle(
-                    fontSize: 10,
-                    color: _brown,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ],
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(14),
+        decoration: _cardDecoration(),
+        child: Row(
+          children: [
+            _IconBox(
+              icon: Icons.medication_outlined,
+              fill: const Color(0xFFFFF3D2),
+              iconColor: _yellow,
             ),
-          ),
-          IconButton(
-            onPressed: onDelete,
-            icon: const Icon(Icons.delete_outline, color: _muted, size: 18),
-          ),
-        ],
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(med.name, style: _rowTitle()),
+                  const SizedBox(height: 3),
+                  Text(
+                    '${med.time} · ${med.timing}',
+                    style: const TextStyle(
+                      fontSize: 10,
+                      color: _brown,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            IconButton(
+              onPressed: onDelete,
+              icon: const Icon(Icons.delete_outline, color: _muted, size: 18),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -15,6 +15,10 @@ import 'session_store.dart';
 // TODO: 설정 백엔드 연동이 준비되면 false로 변경한다.
 const bool kUseMockSettingsForDevelopment = false;
 
+/// '드셨는지 인형이 확인하기'가 켜져 있을 때, 대답이 없으면
+/// 몇 분 뒤에 한 번 더 여쭤볼지.
+const int kMedicationRecheckMinutes = 10;
+
 /// 서버가 돌려준 message를 그대로 사용자에게 보여줄 수 있는 에러.
 class ApiException implements Exception {
   ApiException(this.message, this.status);
@@ -227,12 +231,16 @@ class SettingsApi {
     int? volume,
     int? defaultVoiceId,
     bool? medicationCheck,
+    int? medicationRecheckMinutes,
   }) async {
     final body = <String, dynamic>{};
     if (name != null) body['name'] = name;
     if (volume != null) body['volume'] = volume;
     if (defaultVoiceId != null) body['defaultVoiceId'] = defaultVoiceId;
     if (medicationCheck != null) body['medicationCheck'] = medicationCheck;
+    if (medicationRecheckMinutes != null) {
+      body['medicationRecheckMinutes'] = medicationRecheckMinutes;
+    }
     final d = await _send('PUT', '/devices/$deviceId/settings', body: body);
     return DeviceSettings.fromJson(d as Map<String, dynamic>);
   }
@@ -663,6 +671,8 @@ dynamic _mockSettingsResponse(
       'batteryHoursLeft': 18,
       'volume': body?['volume'] ?? 60,
       'medicationCheck': body?['medicationCheck'] ?? true,
+      'medicationRecheckMinutes':
+          body?['medicationRecheckMinutes'] ?? kMedicationRecheckMinutes,
       'defaultVoiceId': body?['defaultVoiceId'] ?? 1,
       'voices': [
         {
@@ -697,6 +707,7 @@ dynamic _mockSettingsResponse(
     }
     return {
       'medicationCheck': true,
+      'medicationRecheckMinutes': kMedicationRecheckMinutes,
       'medications': [
         {
           'medicationId': 1,
@@ -1259,6 +1270,7 @@ class DeviceSettings {
     required this.batteryHoursLeft,
     required this.volume,
     required this.medicationCheck,
+    required this.medicationRecheckMinutes,
     required this.hasDeviceToken,
     required this.defaultVoiceId,
     required this.voices,
@@ -1273,6 +1285,8 @@ class DeviceSettings {
     batteryHoursLeft: json['batteryHoursLeft'] as int,
     volume: json['volume'] as int,
     medicationCheck: json['medicationCheck'] == true,
+    medicationRecheckMinutes:
+        json['medicationRecheckMinutes'] as int? ?? kMedicationRecheckMinutes,
     hasDeviceToken: json['hasDeviceToken'] == true,
     defaultVoiceId: json['defaultVoiceId'] as int?,
     voices: (json['voices'] as List)
@@ -1290,6 +1304,9 @@ class DeviceSettings {
   final int batteryHoursLeft;
   final int volume;
   final bool medicationCheck;
+
+  /// 확인에 대답이 없을 때 다시 여쭤보기까지의 간격(분). 0이면 다시 묻지 않는다.
+  final int medicationRecheckMinutes;
 
   /// 기기 토큰이 발급된 적 있는지. 값 자체는 발급 응답에서만 볼 수 있다.
   final bool hasDeviceToken;
@@ -1397,16 +1414,25 @@ class DndSettings {
 }
 
 class MedicationList {
-  MedicationList({required this.medicationCheck, required this.items});
+  MedicationList({
+    required this.medicationCheck,
+    required this.medicationRecheckMinutes,
+    required this.items,
+  });
 
   factory MedicationList.fromJson(Map<String, dynamic> json) => MedicationList(
     medicationCheck: json['medicationCheck'] == true,
+    medicationRecheckMinutes:
+        json['medicationRecheckMinutes'] as int? ?? kMedicationRecheckMinutes,
     items: (json['medications'] as List)
         .map((e) => Medication.fromJson(e as Map<String, dynamic>))
         .toList(),
   );
 
   final bool medicationCheck;
+
+  /// 대답이 없을 때 다시 여쭤보기까지의 간격(분). 0이면 다시 묻지 않는다.
+  final int medicationRecheckMinutes;
   final List<Medication> items;
 }
 
