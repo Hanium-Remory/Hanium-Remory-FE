@@ -68,17 +68,44 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final SettingsApi _api = SettingsApi();
+
+  /// 인형이 말을 듣기 시작하면(웨이크워드) 서버의 '대화중'이 바뀐다. 서버가 앱으로
+  /// 밀어주는 경로가 없어서, 홈이 떠 있는 동안만 이 간격으로 다시 물어본다.
+  static const Duration _pollInterval = Duration(seconds: 5);
 
   HomeSummary? _summary;
   bool _loading = true;
   String? _error;
 
+  int? _userId;
+  Timer? _poll;
+  bool _refreshing = false;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _load();
+  }
+
+  @override
+  void dispose() {
+    _poll?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // 앱이 뒤로 가 있는 동안까지 5초마다 부를 이유가 없다.
+    if (state == AppLifecycleState.resumed) {
+      _refresh();
+      _startPolling();
+    } else {
+      _poll?.cancel();
+    }
   }
 
   Future<void> _load() async {
@@ -94,15 +121,38 @@ class _HomeScreenState extends State<HomeScreen> {
       final summary = await _api.home(user.userId);
       if (!mounted) return;
       setState(() {
+        _userId = user.userId;
         _summary = summary;
         _loading = false;
       });
+      _startPolling();
     } on ApiException catch (e) {
       if (mounted) setState(() { _loading = false; _error = e.message; });
     } catch (_) {
       if (mounted) {
         setState(() { _loading = false; _error = '홈 정보를 불러오지 못했어요.'; });
       }
+    }
+  }
+
+  void _startPolling() {
+    _poll?.cancel();
+    _poll = Timer.periodic(_pollInterval, (_) => _refresh());
+  }
+
+  /// 조용히 다시 받아온다. 실패해도 화면은 마지막 값을 그대로 두고 다음 주기에 재시도한다.
+  Future<void> _refresh() async {
+    final userId = _userId;
+    if (userId == null || _refreshing) return;
+    _refreshing = true;
+    try {
+      final summary = await _api.home(userId);
+      if (!mounted) return;
+      setState(() => _summary = summary);
+    } catch (_) {
+      // 무시 — 다음 주기에 다시 시도한다.
+    } finally {
+      _refreshing = false;
     }
   }
 
@@ -548,6 +598,8 @@ class _StatusCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final connected = device?.connected == true;
+    // 인형이 음성인식을 시작하면 서버가 켜 준다. 인형이 꺼지면 서버가 false 로 준다.
+    final talking = device?.inConversation == true;
     final String badge;
     final Color badgeBg;
     final Color badgeFg;
@@ -555,23 +607,29 @@ class _StatusCard extends StatelessWidget {
       badge = '연결 전';
       badgeBg = const Color(0xFFF0E8DF);
       badgeFg = _muted;
-    } else if (connected) {
-      badge = '안정적';
-      badgeBg = const Color(0xFFE8F6D9);
-      badgeFg = const Color(0xFF4C8B3D);
-    } else {
+    } else if (!connected) {
       badge = '연결 끊김';
       badgeBg = const Color(0xFFFBE3E1);
       badgeFg = const Color(0xFFD55045);
+    } else if (talking) {
+      badge = '대화중';
+      badgeBg = const Color(0xFFFFEFC6);
+      badgeFg = const Color(0xFFB07B15);
+    } else {
+      badge = '연결중';
+      badgeBg = const Color(0xFFE8F6D9);
+      badgeFg = const Color(0xFF4C8B3D);
     }
 
     final String headline;
     if (device == null) {
       headline = '인형을 아직\n연결하지 않았어요.';
-    } else if (connected) {
+    } else if (!connected) {
+      headline = '$name님의 인형이\n연결되어 있지 않아요.';
+    } else if (talking) {
       headline = '지금 $name님과\n이야기 중이에요.';
     } else {
-      headline = '$name님의 인형이\n연결되어 있지 않아요.';
+      headline = '$name님 곁에서\n인형이 기다리고 있어요.';
     }
 
     return Container(
