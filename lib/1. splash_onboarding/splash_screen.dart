@@ -30,9 +30,10 @@ class _SplashScreenState extends State<SplashScreen> {
         SessionState.valid => const MainShell(),
         // 쓰던 계정이 만료됐을 뿐이니 가입이 아니라 로그인으로 보낸다.
         SessionState.expired => const LoginScreen(),
-        SessionState.none => seenOnboarding
-            ? const SignupMethodScreen()
-            : const OnboardingScreen(),
+        SessionState.none =>
+          seenOnboarding
+              ? const SignupMethodScreen()
+              : const OnboardingScreen(),
       };
       Navigator.pushReplacement(
         context,
@@ -82,4 +83,4 @@ class _SplashScreenState extends State<SplashScreen> {
       ),
     );
   }
-}// TODO Implement this library.
+} // TODO Implement this library.
