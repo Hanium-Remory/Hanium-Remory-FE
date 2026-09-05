@@ -689,20 +689,6 @@ class _StatusCard extends StatelessWidget {
                     height: 1.25,
                   ),
                 ),
-                if (device != null) ...[
-                  SizedBox(height: 4.h),
-                  Row(
-                    children: [
-                      const Icon(
-                        Icons.battery_full,
-                        size: 13,
-                        color: Color(0xFF5D9E41),
-                      ),
-                      SizedBox(width: 3.w),
-                      Text('${device!.batteryLevel}%', style: _caption()),
-                    ],
-                  ),
-                ],
               ],
             ),
           ),
