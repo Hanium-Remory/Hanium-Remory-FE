@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
@@ -22,16 +23,15 @@ const Color _soft = Color(0xFFF5E9DF);
 // 토큰을 검증하는데 이 모드에는 진짜 토큰이 없기 때문이다.
 const bool kBypassPasskeyForDevelopment = false;
 
+String get _platformPasskeyName =>
+    defaultTargetPlatform == TargetPlatform.android ? '패스키 지문인식' : 'Face ID';
+
 /// 초대 코드 안내 문구용. 서버 설정이 어떻든 하루를 넘겨 말하지 않는다.
 Duration _atMostADay(Duration left) =>
     left > const Duration(hours: 24) ? const Duration(hours: 24) : left;
 
 class FirstRegistrationFlow extends StatefulWidget {
-  const FirstRegistrationFlow({
-    super.key,
-    this.inviteCode,
-    this.elderName,
-  });
+  const FirstRegistrationFlow({super.key, this.inviteCode, this.elderName});
 
   /// '코드를 받았어요' 로 들어온 경우 확인까지 끝낸 6자리 코드.
   /// 있으면 어르신 등록 화면을 건너뛴다. 합류는 전화번호 인증이 끝나는
@@ -61,7 +61,7 @@ class _FirstRegistrationFlowState extends State<FirstRegistrationFlow> {
   final _phoneAuth = FirebasePhoneAuth();
   bool _busy = false;
   String _busyMsg = '';
-  String? _onboardingToken; // Face ID 등록 후 발급, 번호 연결에 사용
+  String? _onboardingToken; // 패스키 등록 후 발급, 번호 연결에 사용
 
   /// 마지막 페이지 번호. 코드로 들어오면 어르신 등록이 빠져 하나 짧다.
   int get _lastPage => _invited ? 3 : 4;
@@ -108,19 +108,19 @@ class _FirstRegistrationFlowState extends State<FirstRegistrationFlow> {
     if (_busy) return;
     if (kBypassPasskeyForDevelopment) {
       _onboardingToken = 'development-bypass';
-      _snack('개발 모드: Face ID 등록을 건너뛰었습니다.');
+      _snack('개발 모드: $_platformPasskeyName 등록을 건너뛰었습니다.');
       _next();
       return;
     }
     try {
-      _setBusy(true, 'Face ID로 패스키 등록 중…\n생체인증을 진행하세요');
+      _setBusy(true, '$_platformPasskeyName 등록 중…\n생체인증을 진행하세요');
       _onboardingToken = await _api.registerPasskeyFirst(displayName: '보호자');
       _setBusy(false);
-      _snack('패스키(Face ID) 등록 완료! 전화번호를 인증해 주세요.');
+      _snack('$_platformPasskeyName 등록 완료! 전화번호를 인증해 주세요.');
       _next();
     } catch (e) {
       _setBusy(false);
-      _snack('Face ID 등록 실패: $e');
+      _snack('$_platformPasskeyName 등록 실패: $e');
     }
   }
 
@@ -175,7 +175,7 @@ class _FirstRegistrationFlowState extends State<FirstRegistrationFlow> {
   ) async {
     if (_busy) return;
     if (_onboardingToken == null) {
-      _snack('먼저 Face ID 등록을 완료해 주세요.');
+      _snack('먼저 $_platformPasskeyName 등록을 완료해 주세요.');
       return;
     }
     if (name.trim().isEmpty) {
@@ -442,7 +442,7 @@ class _FaceSignupPage extends StatelessWidget {
           Text('비밀번호 없이\n한 번만 기억해요', style: _titleStyle()),
           SizedBox(height: 10.h),
           Text(
-            'Face ID로 안전하게 기억하고,\n다음부터는 자동으로 로그인해요.\n비밀번호를 기억하지 않으셔도 돼요.',
+            '$_platformPasskeyName으로 안전하게 기억하고,\n다음부터는 자동으로 로그인해요.\n비밀번호를 기억하지 않으셔도 돼요.',
             style: _bodyStyle(),
           ),
           const Spacer(),
@@ -450,9 +450,14 @@ class _FaceSignupPage extends StatelessWidget {
             child: Icon(Icons.center_focus_weak, size: 70.sp, color: _brown),
           ),
           SizedBox(height: 34.h),
-          Center(child: Text('Face ID 버튼을 눌러 시작하세요', style: _smallStyle())),
+          Center(
+            child: Text(
+              '$_platformPasskeyName 버튼을 눌러 시작하세요',
+              style: _smallStyle(),
+            ),
+          ),
           const Spacer(),
-          _BottomButton(text: 'Face ID로 시작하기', onTap: onNext),
+          _BottomButton(text: '$_platformPasskeyName으로 시작하기', onTap: onNext),
           SizedBox(height: 18.h),
         ],
       ),
@@ -602,7 +607,11 @@ class _PatientInfoPageState extends State<_PatientInfoPage> {
         name: name,
         gender: _selectedGender == '남성' ? 'male' : 'female',
         // 2월 30일처럼 없는 날짜를 고르면 그 달의 마지막 날로 맞춰진다.
-        birthDate: DateTime(_firstYear + _yearIndex, _monthIndex + 1, _dayIndex + 1),
+        birthDate: DateTime(
+          _firstYear + _yearIndex,
+          _monthIndex + 1,
+          _dayIndex + 1,
+        ),
       );
     } finally {
       if (mounted) setState(() => _busy = false);
