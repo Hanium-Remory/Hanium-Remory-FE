@@ -495,7 +495,18 @@ class SettingsApi {
     return InviteCodeData.fromJson(d as Map<String, dynamic>);
   }
 
+  /// 코드를 쓸 수 있는지만 확인한다. 코드를 쓰지는 않는다.
+  ///
+  /// 가입 전 '코드를 받았어요' 화면에서 부르는 자리라 토큰이 없다.
+  /// 서버도 이 GET 만 인증 없이 열어 두었다.
+  Future<InviteCodePreview> checkInviteCode(String code) async {
+    final d = await _send('GET', '/invite-codes/$code', auth: false);
+    return InviteCodePreview.fromJson(d as Map<String, dynamic>);
+  }
+
   /// 받은 코드로 가족에 합류한다. 코드는 한 번만 쓸 수 있다.
+  /// 이미 로그인한 사람이 쓰는 길이다. 가입 중이라면 코드를 들고 가서
+  /// 전화번호 인증 요청에 함께 보낸다(그 편이 토큰 없이도 된다).
   Future<LinkedFamily> acceptInviteCode(String code) async {
     final d = await _send('POST', '/invite-codes/$code/accept');
     return LinkedFamily.fromJson(d as Map<String, dynamic>);
@@ -825,6 +836,23 @@ class InviteCodeData {
 
   final String inviteCode;
   final int userId;
+  final DateTime? expiresAt;
+}
+
+/// 아직 쓰지 않은 코드를 확인만 한 결과(GET /invite-codes/{code}).
+class InviteCodePreview {
+  InviteCodePreview({required this.userName, this.expiresAt});
+
+  factory InviteCodePreview.fromJson(Map<String, dynamic> json) =>
+      InviteCodePreview(
+        userName: (json['userName'] as String?) ?? '',
+        expiresAt: DateTime.tryParse(
+          (json['expiresAt'] as String?) ?? '',
+        )?.toLocal(),
+      );
+
+  /// 이 코드로 연결될 어르신 이름.
+  final String userName;
   final DateTime? expiresAt;
 }
 
