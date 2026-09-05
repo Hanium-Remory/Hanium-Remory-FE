@@ -203,11 +203,7 @@ class SettingsApi {
     final d = await _send(
       'POST',
       '/devices',
-      body: {
-        'userId': userId,
-        'name': ?name,
-        'serial': ?serial,
-      },
+      body: {'userId': userId, 'name': ?name, 'serial': ?serial},
     );
     return PairedDevice.fromJson(d as Map<String, dynamic>);
   }
@@ -355,6 +351,9 @@ class SettingsApi {
   Future<VoiceStatus> voiceStatus(int voiceId) async =>
       VoiceStatus.fromJson(await _get('/voices/$voiceId/status'));
 
+  Future<void> deleteVoice(int voiceId) async =>
+      _send('DELETE', '/voices/$voiceId');
+
   /// multipart 파일 업로드용 전송. JSON 전용인 [_send] 와 달리 파일을 실어 보낸다.
   /// access 토큰 만료(401)면 한 번 재발급 후 재시도한다(요청을 새로 만들어 파일을 다시 읽음).
   // ── 이미지 업로드 ──────────────────────────────────
@@ -379,10 +378,10 @@ class SettingsApi {
   }
 
   // ── 추억 ───────────────────────────────────────────
-  /// 추억 등록. imageUrl 은 uploadImage 가 돌려준 값을 그대로 넣는다.
+  /// 추억 등록. 사진이 있으면 uploadImage가 돌려준 imageUrl을 함께 넣는다.
   Future<void> createMemory({
     required int userId,
-    required String imageUrl,
+    String? imageUrl,
     required String title,
     String? period,
     String? description,
@@ -391,7 +390,7 @@ class SettingsApi {
       'POST',
       '/users/$userId/memories',
       body: {
-        'imageUrl': imageUrl,
+        if (imageUrl != null && imageUrl.isNotEmpty) 'imageUrl': imageUrl,
         'title': title,
         if (period != null && period.isNotEmpty) 'period': period,
         if (description != null && description.isNotEmpty)
@@ -679,6 +678,7 @@ dynamic _mockSettingsResponse(
         {
           'voiceId': 1,
           'name': '기억이 목소리',
+          'protectorId': null,
           'status': 'ready',
           'progress': 100,
           'isDefault': true,
@@ -1341,6 +1341,7 @@ class DeviceVoice {
     required this.status,
     required this.progress,
     required this.isDefault,
+    required this.protectorId,
     this.audioUrl,
   });
 
@@ -1350,6 +1351,7 @@ class DeviceVoice {
     status: json['status'] as String,
     progress: json['progress'] as int? ?? 0,
     isDefault: json['isDefault'] == true,
+    protectorId: json['protectorId'] as int?,
     audioUrl: json['audioUrl'] as String?,
   );
 
@@ -1358,6 +1360,9 @@ class DeviceVoice {
   final String status; // ready | training | failed
   final int progress;
   final bool isDefault;
+  final int? protectorId;
+
+  bool get isBuiltIn => protectorId == null;
 
   /// 등록한 원본 녹음. 다시 들어볼 때 쓴다.
   final String? audioUrl;

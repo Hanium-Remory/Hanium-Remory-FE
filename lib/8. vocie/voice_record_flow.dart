@@ -118,7 +118,7 @@ class _VoiceRecordFlowState extends State<VoiceRecordFlow> {
       }
       final voice = await _api.registerVoiceBytes(
         deviceId,
-        name: '가족 음성',
+        name: profile.name,
         bytes: audio,
       );
       if (!mounted) return;

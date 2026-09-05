@@ -101,7 +101,7 @@ class PreviewLauncher extends StatelessWidget {
         page: const DailyReportScreen(),
       ),
       _PreviewItem(
-        title: '추억 추가',
+        title: '기억 추가',
         subtitle: '작성 후 저장을 누르면 저장 완료 화면으로 이동',
         page: const MemoryAddFlow(),
       ),

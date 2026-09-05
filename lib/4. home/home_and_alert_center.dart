@@ -127,10 +127,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       });
       _startPolling();
     } on ApiException catch (e) {
-      if (mounted) setState(() { _loading = false; _error = e.message; });
+      if (mounted)
+        setState(() {
+          _loading = false;
+          _error = e.message;
+        });
     } catch (_) {
       if (mounted) {
-        setState(() { _loading = false; _error = '홈 정보를 불러오지 못했어요.'; });
+        setState(() {
+          _loading = false;
+          _error = '홈 정보를 불러오지 못했어요.';
+        });
       }
     }
   }
@@ -245,7 +252,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     children: [
                       Expanded(
                         child: _QuickTile(
-                          title: '추억 추가',
+                          title: '기억 추가',
                           subtitle: '사진과 글',
                           icon: Icons.image_outlined,
                           color: _brown,
@@ -379,10 +386,17 @@ class _AlertCenterScreenState extends State<AlertCenterScreen> {
         _loading = false;
       });
     } on ApiException catch (e) {
-      if (mounted) setState(() { _loading = false; _error = e.message; });
+      if (mounted)
+        setState(() {
+          _loading = false;
+          _error = e.message;
+        });
     } catch (_) {
       if (mounted) {
-        setState(() { _loading = false; _error = '알림을 불러오지 못했어요.'; });
+        setState(() {
+          _loading = false;
+          _error = '알림을 불러오지 못했어요.';
+        });
       }
     }
   }

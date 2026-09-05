@@ -61,10 +61,14 @@ class MainShell extends StatefulWidget {
 
 class _MainShellState extends State<MainShell> {
   late int _index = widget.initialTab.index;
+  int _memoryRevision = 0;
 
   void _select(int index) {
-    if (index == _index) return;
-    setState(() => _index = index);
+    if (index == _index && index != AppTab.memory.index) return;
+    setState(() {
+      _index = index;
+      if (index == AppTab.memory.index) _memoryRevision++;
+    });
   }
 
   @override
@@ -85,11 +89,11 @@ class _MainShellState extends State<MainShell> {
               Expanded(
                 child: IndexedStack(
                   index: _index,
-                  children: const [
-                    HomeAndAlertPreview(),
-                    FamilyChatScreen(),
-                    MemoryAddFlow(),
-                    SettingsFlow(),
+                  children: [
+                    const HomeAndAlertPreview(),
+                    const FamilyChatScreen(),
+                    MemoryAddFlow(key: ValueKey(_memoryRevision)),
+                    const SettingsFlow(),
                   ],
                 ),
               ),
@@ -112,11 +116,7 @@ class _MainShellState extends State<MainShell> {
 }
 
 class AppNavBar extends StatelessWidget {
-  const AppNavBar({
-    super.key,
-    required this.current,
-    required this.onSelected,
-  });
+  const AppNavBar({super.key, required this.current, required this.onSelected});
 
   final int current;
   final ValueChanged<int> onSelected;
@@ -124,7 +124,7 @@ class AppNavBar extends StatelessWidget {
   static const _items = [
     (Icons.home_outlined, '홈'),
     (Icons.chat_bubble_outline, '대화'),
-    (Icons.image_outlined, '추억'),
+    (Icons.image_outlined, '기억'),
     (Icons.settings_outlined, '설정'),
   ];
 

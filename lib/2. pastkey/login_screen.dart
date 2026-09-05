@@ -4,6 +4,7 @@
 // 앱을 지웠거나 기기를 바꿔 세션이 비었을 때 들어오는 입구다.
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import '../main_shell.dart';
@@ -28,6 +29,13 @@ class _LoginScreenState extends State<LoginScreen> {
   final _api = AuthApi();
   final _phoneController = TextEditingController();
   bool _busy = false;
+
+  bool get _isAndroid => defaultTargetPlatform == TargetPlatform.android;
+
+  String get _passkeyName => _isAndroid ? '패스키 지문인식' : 'Face ID';
+
+  String get _passkeyGuide =>
+      _isAndroid ? '등록해 두신 패스키 지문인식으로 확인해요' : '등록해 두신 Face ID / 지문으로 확인해요';
 
   @override
   void dispose() {
@@ -146,7 +154,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                         SizedBox(height: 10.h),
                         Text(
-                          '가입할 때 쓰신 전화번호를 넣어주세요.\n비밀번호 없이 Face ID로 바로 들어갑니다.',
+                          '가입할 때 쓰신 전화번호를 넣어주세요.\n비밀번호 없이 $_passkeyName으로 바로 들어갑니다.',
                           style: TextStyle(
                             fontSize: 11.sp,
                             height: 1.55,
@@ -188,8 +196,9 @@ class _LoginScreenState extends State<LoginScreen> {
                               ),
                               filled: true,
                               fillColor: Colors.white,
-                              contentPadding:
-                                  EdgeInsets.symmetric(horizontal: 14.w),
+                              contentPadding: EdgeInsets.symmetric(
+                                horizontal: 14.w,
+                              ),
                               enabledBorder: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(8.r),
                                 borderSide: const BorderSide(color: _line),
@@ -212,7 +221,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         SizedBox(height: 14.h),
                         Center(
                           child: Text(
-                            '등록해 두신 Face ID / 지문으로 확인해요',
+                            _passkeyGuide,
                             style: TextStyle(
                               fontSize: 9.sp,
                               height: 1.35,
@@ -243,7 +252,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 Icon(Icons.lock_open_rounded, size: 16.sp),
                                 SizedBox(width: 5.w),
                                 Text(
-                                  'Face ID로 로그인',
+                                  '$_passkeyName으로 로그인',
                                   style: TextStyle(
                                     fontSize: 12.sp,
                                     fontWeight: FontWeight.w800,

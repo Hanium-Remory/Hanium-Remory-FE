@@ -203,9 +203,7 @@ class _HubBody extends StatelessWidget {
               _MenuRow(
                 icon: Icons.sentiment_satisfied_alt,
                 title: '모리 인형 설정',
-                subtitle: deviceId == null
-                    ? '인형을 연결하면 쓸 수 있어요'
-                    : '목소리, 볼륨, 배터리',
+                subtitle: deviceId == null ? '인형을 연결하면 쓸 수 있어요' : '목소리, 볼륨',
                 onTap: deviceId == null
                     ? null
                     : () => _openAndReload(
@@ -699,10 +697,7 @@ class _DeviceTokenCardState extends State<_DeviceTokenCard> {
 
   Widget _body() {
     if (widget.deviceId == null) {
-      return Text(
-        '인형을 먼저 연결하면 기기 토큰을 발급할 수 있어요.',
-        style: _caption(),
-      );
+      return Text('인형을 먼저 연결하면 기기 토큰을 발급할 수 있어요.', style: _caption());
     }
     if (_loading) {
       return const Center(
@@ -804,9 +799,7 @@ class _DeviceTokenCardState extends State<_DeviceTokenCard> {
               ),
             ),
             child: Text(
-              _issuing
-                  ? '발급 중...'
-                  : (_issuedOnServer ? '재발급' : '발급받기'),
+              _issuing ? '발급 중...' : (_issuedOnServer ? '재발급' : '발급받기'),
               style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w900),
             ),
           ),
@@ -1085,6 +1078,39 @@ class _DollSettingsBody extends StatelessWidget {
     }
   }
 
+  Future<void> _deleteVoice(BuildContext context, DeviceVoice voice) async {
+    if (voice.isBuiltIn) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: _bg,
+        title: const Text(
+          '목소리 삭제',
+          style: TextStyle(fontWeight: FontWeight.w900),
+        ),
+        content: Text('${voice.name} 목소리를 삭제할까요?', style: _caption()),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('취소', style: TextStyle(color: _muted)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('삭제', style: TextStyle(color: Color(0xFFC9564D))),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+    try {
+      await _api.deleteVoice(voice.voiceId);
+      await reload();
+      if (context.mounted) _toast(context, '목소리를 삭제했어요.');
+    } catch (e) {
+      if (context.mounted) _toast(context, _errorText(e));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final paired = device.pairedAt;
@@ -1152,40 +1178,6 @@ class _DollSettingsBody extends StatelessWidget {
           ),
         ),
         SizedBox(height: 18.h),
-        _Label('배터리'),
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: _cardDecoration(),
-          child: Column(
-            children: [
-              Row(
-                children: [
-                  Text(
-                    '${device.batteryLevel}%',
-                    style: const TextStyle(
-                      fontSize: 26,
-                      color: _dark,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  const Spacer(),
-                  Text('약 ${device.batteryHoursLeft}시간 남았어요', style: _tiny()),
-                ],
-              ),
-              SizedBox(height: 12.h),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(99),
-                child: LinearProgressIndicator(
-                  value: device.batteryLevel / 100,
-                  minHeight: 8,
-                  color: device.batteryLevel <= 20 ? _yellow : _green,
-                  backgroundColor: const Color(0xFFEAE1D8),
-                ),
-              ),
-            ],
-          ),
-        ),
-        SizedBox(height: 18.h),
         _Label('인형 목소리'),
         if (device.voices.isEmpty)
           Container(
@@ -1204,6 +1196,9 @@ class _DollSettingsBody extends StatelessWidget {
                     checked: voice.isDefault,
                     progress: voice.isTraining ? voice.progress / 100 : null,
                     onTap: () => _selectVoice(context, voice),
+                    onDelete: voice.isBuiltIn
+                        ? null
+                        : () => _deleteVoice(context, voice),
                   ),
                 )
                 .toList(),
@@ -1268,7 +1263,7 @@ class DollVolumeScreen extends StatefulWidget {
 }
 
 class _DollVolumeScreenState extends State<DollVolumeScreen> {
-  late double volume = widget.initialVolume.toDouble().clamp(30, 95);
+  late double volume = widget.initialVolume.toDouble().clamp(30, 100);
   bool _saving = false;
   bool _showDollSettings = false;
 
@@ -1326,8 +1321,8 @@ class _DollVolumeScreenState extends State<DollVolumeScreen> {
                       Slider(
                         value: volume,
                         min: 30,
-                        max: 95,
-                        divisions: 65,
+                        max: 100,
+                        divisions: 70,
                         activeColor: _brown,
                         inactiveColor: _line,
                         onChanged: (v) => setState(() => volume = v),
@@ -1341,7 +1336,7 @@ class _DollVolumeScreenState extends State<DollVolumeScreen> {
                   (30, '작게', '조용한 새벽용'),
                   (60, '보통', '실내 거리에서'),
                   (80, '크게', '귀가 어두우신 분께'),
-                  (95, '아주 크게', '먼 곳에서도 들리게'),
+                  (100, '아주 크게', '먼 곳에서도 들리게'),
                 ])
                   _VolumePreset(
                     percent: data.$1,
@@ -3588,12 +3583,14 @@ class _VoiceRow extends StatefulWidget {
     this.progress,
     this.onTap,
     this.audioUrl,
+    this.onDelete,
   });
   final String name;
   final String subtitle;
   final bool checked;
   final double? progress;
   final VoidCallback? onTap;
+  final VoidCallback? onDelete;
 
   /// 등록한 원본 녹음. 있으면 재생 버튼이 붙는다.
   final String? audioUrl;
@@ -3693,6 +3690,18 @@ class _VoiceRowState extends State<_VoiceRow> {
                 constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
               ),
             if (checked) const Icon(Icons.check_circle, color: _brown),
+            if (widget.onDelete != null)
+              IconButton(
+                tooltip: '목소리 삭제',
+                onPressed: widget.onDelete,
+                icon: const Icon(
+                  Icons.delete_outline,
+                  color: Color(0xFFC9564D),
+                  size: 22,
+                ),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+              ),
           ],
         ),
       ),

@@ -26,7 +26,7 @@ class MemoryAddFlow extends StatefulWidget {
 /// 입력 화면이 모아 넘겨주는 값. 저장은 흐름(Flow) 쪽에서 한다.
 typedef MemorySubmit =
     Future<void> Function({
-      required Uint8List photo,
+      required Uint8List? photo,
       required String filename,
       required String title,
       required String period,
@@ -35,7 +35,9 @@ typedef MemorySubmit =
 
 class _MemoryAddFlowState extends State<MemoryAddFlow> {
   final SettingsApi _api = SettingsApi();
+  bool _showMemoryForm = false;
   bool _saved = false;
+  bool _savedAsNewMemory = true;
 
   /// 연결된 어르신. 화면 문구와 저장에 모두 쓰므로 들어올 때 한 번만 받는다.
   LinkedUser? _elder;
@@ -55,10 +57,10 @@ class _MemoryAddFlowState extends State<MemoryAddFlow> {
     }
   }
 
-  /// 사진을 먼저 올리고, 받은 URL 로 추억을 등록한다.
+  /// 사진이 있으면 먼저 올리고, 없으면 글만으로 추억을 등록한다.
   /// 실패하면 예외를 그대로 올려 입력 화면이 사유를 보여주게 한다.
   Future<void> _saveMemory({
-    required Uint8List photo,
+    required Uint8List? photo,
     required String filename,
     required String title,
     required String period,
@@ -68,11 +70,13 @@ class _MemoryAddFlowState extends State<MemoryAddFlow> {
     if (user == null) {
       throw ApiException('연결된 어르신이 없어요. 가족 연결을 먼저 마쳐주세요.', 400);
     }
-    final imageUrl = await _api.uploadImage(
-      bytes: photo,
-      filename: filename,
-      userId: user.userId,
-    );
+    final imageUrl = photo == null
+        ? null
+        : await _api.uploadImage(
+            bytes: photo,
+            filename: filename,
+            userId: user.userId,
+          );
     await _api.createMemory(
       userId: user.userId,
       imageUrl: imageUrl,
@@ -80,29 +84,167 @@ class _MemoryAddFlowState extends State<MemoryAddFlow> {
       period: period,
       description: description,
     );
-    if (mounted) setState(() => _saved = true);
+    if (mounted) {
+      setState(() {
+        _savedAsNewMemory = false;
+        _saved = true;
+      });
+    }
+  }
+
+  void _saveNewMemory() {
+    setState(() {
+      _savedAsNewMemory = true;
+      _saved = true;
+    });
   }
 
   void _backToForm() {
     setState(() => _saved = false);
   }
 
+  void _openMemoryForm() {
+    setState(() => _showMemoryForm = true);
+  }
+
+  void _backToChoice() {
+    setState(() => _showMemoryForm = false);
+  }
+
   void _goHome() {
+    _saved = false;
+    _showMemoryForm = false;
     MainShellScope.maybeOf(context)?.selectTab(AppTab.home);
   }
 
   @override
   Widget build(BuildContext context) {
-    return _saved
-        ? MemorySavedScreen(onBack: _backToForm, onConfirm: _goHome)
-        : MemoryAddScreen(onSave: _saveMemory, elderName: _elder?.name);
+    if (_saved) {
+      return MemorySavedScreen(
+        onBack: _backToForm,
+        onConfirm: _goHome,
+        useMemoryTerms: _savedAsNewMemory,
+      );
+    }
+    if (_showMemoryForm) {
+      return MemoryAddScreen(
+        onSave: _saveMemory,
+        elderName: _elder?.name,
+        onBack: _backToChoice,
+      );
+    }
+    return MemoryTypeScreen(
+      onOpenMemoryForm: _openMemoryForm,
+      onSave: _saveNewMemory,
+    );
+  }
+}
+
+class MemoryTypeScreen extends StatelessWidget {
+  const MemoryTypeScreen({
+    super.key,
+    required this.onOpenMemoryForm,
+    required this.onSave,
+  });
+
+  final VoidCallback onOpenMemoryForm;
+  final VoidCallback onSave;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: _bg,
+      body: SafeArea(
+        child: Padding(
+          padding: EdgeInsets.symmetric(horizontal: 22.w),
+          child: Column(
+            children: [
+              SizedBox(height: 10.h),
+              _Header(title: '새 기억', actionText: '저장', onAction: onSave),
+              SizedBox(height: 18.h),
+              Expanded(
+                child: SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const _Label('추가하고 싶은 부분을 선택해주세요'),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _ChipButton(
+                              text: '새 기억',
+                              selected: true,
+                              onTap: () {},
+                            ),
+                          ),
+                          SizedBox(width: 8.w),
+                          Expanded(
+                            child: _ChipButton(
+                              text: '새 추억',
+                              selected: false,
+                              onTap: onOpenMemoryForm,
+                            ),
+                          ),
+                        ],
+                      ),
+                      SizedBox(height: 18.h),
+                      TextField(
+                        minLines: 12,
+                        maxLines: 12,
+                        cursorColor: _brown,
+                        style: TextStyle(
+                          fontSize: 14.sp,
+                          color: _dark,
+                          height: 1.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        decoration: InputDecoration(
+                          hintText:
+                              '예: 자녀 김기억(45세), 김마음(42세)\n손주 김서연(12세), 김도윤(9세)',
+                          hintStyle: TextStyle(
+                            fontSize: 13.sp,
+                            height: 1.6,
+                            color: const Color(0xFFB9ACA2),
+                            fontWeight: FontWeight.w500,
+                          ),
+                          filled: true,
+                          fillColor: Colors.white,
+                          contentPadding: EdgeInsets.all(16.w),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8.r),
+                            borderSide: const BorderSide(color: _line),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8.r),
+                            borderSide: const BorderSide(color: _brown),
+                          ),
+                        ),
+                      ),
+                      SizedBox(height: 18.h),
+                      const _GuideBox(),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
 class MemoryAddScreen extends StatefulWidget {
-  const MemoryAddScreen({super.key, required this.onSave, this.elderName});
+  const MemoryAddScreen({
+    super.key,
+    required this.onSave,
+    required this.onBack,
+    this.elderName,
+  });
 
   final MemorySubmit onSave;
+  final VoidCallback onBack;
 
   /// 연결된 어르신 이름. 아직 못 받았으면 null.
   final String? elderName;
@@ -119,7 +261,7 @@ class _MemoryAddScreenState extends State<MemoryAddScreen> {
   int _selectedWhen = 0;
   bool _busy = false;
 
-  final List<String> _whenOptions = ['오늘', '최근', '몇 년 전', '오래된 추억'];
+  final List<String> _whenOptions = ['오늘', '최근', '몇 년 전', '오래된 기억'];
 
   @override
   void dispose() {
@@ -146,16 +288,12 @@ class _MemoryAddScreenState extends State<MemoryAddScreen> {
     );
   }
 
-  /// 저장 버튼. 사진과 제목은 서버에서도 필수라 올리기 전에 먼저 확인한다.
+  /// 저장 버튼. 사진은 선택 사항이고 제목만 필수로 확인한다.
   Future<void> _submit() async {
     if (_busy) return;
     FocusManager.instance.primaryFocus?.unfocus();
 
     final photo = _selectedPhoto;
-    if (photo == null) {
-      _snack('사진을 한 장 골라주세요.');
-      return;
-    }
     final title = _titleController.text.trim();
     if (title.isEmpty) {
       _snack('한 줄 제목을 적어주세요.');
@@ -195,6 +333,7 @@ class _MemoryAddScreenState extends State<MemoryAddScreen> {
                 title: '새 추억',
                 actionText: _busy ? '저장 중…' : '저장',
                 onAction: _busy ? null : _submit,
+                onBack: widget.onBack,
               ),
               SizedBox(height: 14.h),
               Expanded(
@@ -203,6 +342,27 @@ class _MemoryAddScreenState extends State<MemoryAddScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      const _Label('추가하고 싶은 부분을 선택해주세요'),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _ChipButton(
+                              text: '새 기억',
+                              selected: false,
+                              onTap: widget.onBack,
+                            ),
+                          ),
+                          SizedBox(width: 8.w),
+                          Expanded(
+                            child: _ChipButton(
+                              text: '새 추억',
+                              selected: true,
+                              onTap: () {},
+                            ),
+                          ),
+                        ],
+                      ),
+                      SizedBox(height: 18.h),
                       _PhotoUploadBox(
                         imageBytes: _selectedPhoto,
                         onTap: _pickPhoto,
@@ -261,10 +421,12 @@ class MemorySavedScreen extends StatelessWidget {
     super.key,
     required this.onBack,
     required this.onConfirm,
+    required this.useMemoryTerms,
   });
 
   final VoidCallback onBack;
   final VoidCallback onConfirm;
+  final bool useMemoryTerms;
 
   @override
   Widget build(BuildContext context) {
@@ -276,7 +438,10 @@ class MemorySavedScreen extends StatelessWidget {
           child: Column(
             children: [
               SizedBox(height: 10.h),
-              _Header(title: '새 추억 등록', onBack: onBack),
+              _Header(
+                title: useMemoryTerms ? '새 기억 등록' : '새 추억 등록',
+                onBack: onBack,
+              ),
               const Spacer(),
               _SuccessMark(),
               SizedBox(height: 34.h),
@@ -290,7 +455,9 @@ class MemorySavedScreen extends StatelessWidget {
               ),
               SizedBox(height: 22.h),
               Text(
-                '새로운 추억을 인형이 저장하는 데 몇 분 정도가 걸려요.\n저장된 이후에 새로운 추억에 대해 이야기할게요.',
+                useMemoryTerms
+                    ? '새로운 기억을 인형이 저장하는 데 몇 분 정도가 걸려요.\n저장된 이후에 새로운 기억에 대해 이야기할게요.'
+                    : '새로운 추억을 인형이 저장하는 데 몇 분 정도가 걸려요.\n저장된 이후에 새로운 추억에 대해 이야기할게요.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 13.sp,
@@ -443,7 +610,7 @@ class _PhotoUploadBox extends StatelessWidget {
                     ),
                   ),
                   SizedBox(height: 5.h),
-                  Text('가족, 풍경, 음식 모두 좋아요', style: _caption()),
+                  Text('사진 없이 글만 등록해도 괜찮아요', style: _caption()),
                 ],
               )
             : Stack(
@@ -586,6 +753,8 @@ class _ChipButton extends StatelessWidget {
 }
 
 class _GuideBox extends StatelessWidget {
+  const _GuideBox();
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -602,7 +771,7 @@ class _GuideBox extends StatelessWidget {
           SizedBox(width: 10.w),
           Expanded(
             child: Text(
-              '인형은 이 추억을 자연스러운 대화로 ${SessionStore.elderHonorific}께 들려드려요.\n정확한 단어는 다르게 표현될 수 있어요.',
+              '인형은 이 기억을 자연스러운 대화로 ${SessionStore.elderHonorific}께 들려드려요.\n정확한 단어는 다르게 표현될 수 있어요.',
               style: TextStyle(
                 fontSize: 11.sp,
                 color: _muted,
