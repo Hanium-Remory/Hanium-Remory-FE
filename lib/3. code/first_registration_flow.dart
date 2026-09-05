@@ -27,7 +27,19 @@ Duration _atMostADay(Duration left) =>
     left > const Duration(hours: 24) ? const Duration(hours: 24) : left;
 
 class FirstRegistrationFlow extends StatefulWidget {
-  const FirstRegistrationFlow({super.key});
+  const FirstRegistrationFlow({
+    super.key,
+    this.inviteCode,
+    this.elderName,
+  });
+
+  /// '코드를 받았어요' 로 들어온 경우 확인까지 끝낸 6자리 코드.
+  /// 있으면 어르신 등록 화면을 건너뛴다. 합류는 전화번호 인증이 끝나는
+  /// 순간 서버가 함께 처리한다(그 전에는 토큰이 없어 부를 수 없다).
+  final String? inviteCode;
+
+  /// 그 코드로 연결될 어르신 이름. 안내 문구에만 쓴다.
+  final String? elderName;
 
   @override
   State<FirstRegistrationFlow> createState() => _FirstRegistrationFlowState();
@@ -41,6 +53,9 @@ class _FirstRegistrationFlowState extends State<FirstRegistrationFlow> {
   DateTime? _inviteExpiresAt;
   String _myName = '';
 
+  /// 코드를 넣고 들어온 가입인가. 어르신 등록 화면이 빠진다.
+  bool get _invited => (widget.inviteCode ?? '').isNotEmpty;
+
   final _api = AuthApi();
   final _settings = SettingsApi();
   final _phoneAuth = FirebasePhoneAuth();
@@ -48,8 +63,11 @@ class _FirstRegistrationFlowState extends State<FirstRegistrationFlow> {
   String _busyMsg = '';
   String? _onboardingToken; // Face ID 등록 후 발급, 번호 연결에 사용
 
+  /// 마지막 페이지 번호. 코드로 들어오면 어르신 등록이 빠져 하나 짧다.
+  int get _lastPage => _invited ? 3 : 4;
+
   void _next() {
-    if (_page < 4) {
+    if (_page < _lastPage) {
       setState(() => _page++);
     }
   }
@@ -119,14 +137,10 @@ class _FirstRegistrationFlowState extends State<FirstRegistrationFlow> {
         gender: gender,
         birthDate: birthDate,
       );
-      final invite = await _settings.createInviteCode(user.userId);
       final profile = await _settings.myProfile();
       if (!mounted) return;
-      setState(() {
-        _inviteCode = invite.inviteCode;
-        _inviteExpiresAt = invite.expiresAt;
-        _myName = profile.name;
-      });
+      setState(() => _myName = profile.name);
+      await _prepareInviteCode(user.userId);
     } on ApiException catch (e) {
       _snack(e.message);
       return;
@@ -135,6 +149,19 @@ class _FirstRegistrationFlowState extends State<FirstRegistrationFlow> {
       return;
     }
     _next();
+  }
+
+  /// 마지막 화면에서 보여줄 초대 코드를 미리 받아 둔다.
+  /// 실패해도 가입은 끝난 것이라 막지 않는다(그 화면에서 '------' 로 보인다).
+  Future<void> _prepareInviteCode(int userId) async {
+    try {
+      final invite = await _settings.createInviteCode(userId);
+      if (!mounted) return;
+      setState(() {
+        _inviteCode = invite.inviteCode;
+        _inviteExpiresAt = invite.expiresAt;
+      });
+    } catch (_) {}
   }
 
   /// 2단계: 보호자 정보(전화번호) → Firebase SMS 인증 → 패스키 계정에 번호 연결.
@@ -183,9 +210,15 @@ class _FirstRegistrationFlowState extends State<FirstRegistrationFlow> {
       }
 
       _setBusy(true, '가입 마무리 중…');
+      // 이름·관계는 여기서 함께 보낸다. 패스키를 먼저 만드는 순서라 이 단계
+      // 전까지 access token 이 없어 프로필 수정을 따로 부를 수 없다.
+      // 초대 코드도 같이 보내면 서버가 번호를 붙이면서 가족 연결까지 끝낸다.
       final result = await _api.attachPhoneWithFirebase(
         onboardingToken: _onboardingToken!,
         idToken: idToken,
+        inviteCode: widget.inviteCode,
+        name: name,
+        relation: relation,
       );
       await SessionStore.saveSession(
         accessToken: result.accessToken,
@@ -194,16 +227,20 @@ class _FirstRegistrationFlowState extends State<FirstRegistrationFlow> {
       );
       // 백엔드 세션을 받았으니 Firebase 쪽 로그인 상태는 정리한다.
       await _phoneAuth.signOut();
-      // 여기서 이름·관계를 채운다. 패스키를 먼저 만드는 순서라 등록 시점엔
-      // 아직 입력을 받지 못했다. 실패해도 가입 자체는 끝난 것이라 넘어간다.
-      try {
-        await _settings.updateProfile(
-          name: name.trim(),
-          relation: relation,
-        );
-      } catch (_) {}
+      if (!mounted) return;
+      setState(() => _myName = name.trim());
+      final linked = result.linkedUser;
+      if (linked != null) {
+        // 이미 가족에 붙었으니 어르신 등록은 건너뛴다. 다음 화면에서
+        // 이 사람이 또 가족을 부를 수 있게 코드만 미리 받아 둔다.
+        await _prepareInviteCode(linked.userId);
+      }
       _setBusy(false);
-      _snack('전화번호 인증 완료! 가입이 끝났어요.');
+      _snack(
+        linked != null
+            ? '${linked.name}님의 가족으로 연결되었어요.'
+            : '전화번호 인증 완료! 가입이 끝났어요.',
+      );
       _next();
     } catch (e) {
       _setBusy(false);
@@ -266,9 +303,19 @@ class _FirstRegistrationFlowState extends State<FirstRegistrationFlow> {
   Widget build(BuildContext context) {
     final pages = [
       _FaceSignupPage(onNext: _onFaceIdStart),
-      _GuardianInfoPage(onBack: _back, onNext: _onGuardianNext),
-      _PatientInfoPage(onBack: _back, onNext: _onPatientNext),
-      _FamilyConnectPage(onBack: _back, onNext: _next),
+      _GuardianInfoPage(
+        onBack: _back,
+        onNext: _onGuardianNext,
+        // 코드로 들어오면 어르신 등록이 없어 이 화면이 마지막 입력이다.
+        totalSteps: _invited ? 1 : 2,
+        elderName: _invited ? widget.elderName : null,
+      ),
+      if (!_invited) _PatientInfoPage(onBack: _back, onNext: _onPatientNext),
+      _FamilyConnectPage(
+        onBack: _back,
+        onNext: _next,
+        totalSteps: _invited ? 2 : 3,
+      ),
       _InviteCodeCreatePage(
         code: _inviteCode,
         expiresAt: _inviteExpiresAt,
@@ -414,11 +461,22 @@ class _FaceSignupPage extends StatelessWidget {
 }
 
 class _GuardianInfoPage extends StatefulWidget {
-  const _GuardianInfoPage({required this.onBack, required this.onNext});
+  const _GuardianInfoPage({
+    required this.onBack,
+    required this.onNext,
+    this.totalSteps = 2,
+    this.elderName,
+  });
 
   final VoidCallback onBack;
   final Future<void> Function(String name, String phone, String relation)
   onNext;
+
+  /// 남은 입력 화면 수. 초대 코드로 들어오면 여기서 끝난다.
+  final int totalSteps;
+
+  /// 초대 코드로 들어왔을 때 연결될 어르신 이름. 안내 문구용.
+  final String? elderName;
 
   @override
   State<_GuardianInfoPage> createState() => _GuardianInfoPageState();
@@ -446,9 +504,16 @@ class _GuardianInfoPageState extends State<_GuardianInfoPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(height: 40.h),
-          _StepText(current: 1, total: 2),
+          _StepText(current: 1, total: widget.totalSteps),
           SizedBox(height: 6.h),
           Text('먼저 본인 소개부터 해주세요', style: _sectionTitle()),
+          if (widget.elderName != null) ...[
+            SizedBox(height: 8.h),
+            Text(
+              '인증이 끝나면 ${widget.elderName}님의 가족으로 연결돼요.',
+              style: _bodyStyle(),
+            ),
+          ],
           SizedBox(height: 22.h),
           _Label('이름'),
           _TextBox(controller: _nameController, hintText: '이름을 입력하세요'),
@@ -633,10 +698,17 @@ class _PatientInfoPageState extends State<_PatientInfoPage> {
 }
 
 class _FamilyConnectPage extends StatelessWidget {
-  const _FamilyConnectPage({required this.onBack, required this.onNext});
+  const _FamilyConnectPage({
+    required this.onBack,
+    required this.onNext,
+    this.totalSteps = 3,
+  });
 
   final VoidCallback onBack;
   final VoidCallback onNext;
+
+  /// 전체 단계 수. 초대 코드로 들어오면 어르신 등록이 빠져 하나 짧다.
+  final int totalSteps;
 
   void _goHome(BuildContext context) {
     Navigator.pushReplacement(
@@ -654,7 +726,7 @@ class _FamilyConnectPage extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(height: 40.h),
-          _StepText(current: 3, total: 3),
+          _StepText(current: totalSteps, total: totalSteps),
           SizedBox(height: 6.h),
           Text('가족과 함께 돌봐요', style: _sectionTitle()),
           SizedBox(height: 8.h),

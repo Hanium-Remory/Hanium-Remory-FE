@@ -29,6 +29,19 @@ const String kFirebaseVerifyPath = String.fromEnvironment(
   defaultValue: '/auth/phone/verify-firebase',
 );
 
+/// 초대 코드로 가입하면서 곧바로 연결된 어르신.
+class LinkedUser {
+  LinkedUser({required this.userId, required this.name});
+
+  factory LinkedUser.fromJson(Map<String, dynamic> json) => LinkedUser(
+        userId: json['userId'] as int,
+        name: (json['name'] as String?) ?? '',
+      );
+
+  final int userId;
+  final String name;
+}
+
 /// 로그인/가입 성공 시 발급되는 세션 정보.
 class AuthResult {
   AuthResult({
@@ -36,12 +49,17 @@ class AuthResult {
     required this.accessToken,
     required this.refreshToken,
     required this.onboardingCompleted,
+    this.linkedUser,
   });
 
   final int protectorId;
   final String accessToken;
   final String refreshToken;
   final bool onboardingCompleted;
+
+  /// 초대 코드를 함께 보냈을 때만 채워진다. 있으면 어르신을 새로 등록할
+  /// 필요가 없다(이미 그 가족에 붙었다).
+  final LinkedUser? linkedUser;
 }
 
 class AuthApi {
@@ -156,17 +174,41 @@ class AuthApi {
   }
 
   /// Face-ID-first: 전화번호 인증으로 패스키 계정에 번호를 연결 → 정식 세션 토큰.
+  ///
+  /// [inviteCode]·[name]·[relation] 은 이 단계까지 access token 이 없어
+  /// 앱이 들고 있던 값이다. 서버가 번호를 붙이면서 함께 저장한다.
   Future<AuthResult> attachPhone({
     required String onboardingToken,
     required String phone,
     required String code,
+    String? inviteCode,
+    String? name,
+    String? relation,
   }) async {
     final d = await _post(
       '/auth/phone/verify',
-      {'phoneNumber': phone, 'code': code},
+      {
+        'phoneNumber': phone,
+        'code': code,
+        ..._signupExtras(inviteCode: inviteCode, name: name, relation: relation),
+      },
       bearer: onboardingToken,
     );
     return _toResult(d);
+  }
+
+  /// 가입 화면에서 모아 온 값 중 채워진 것만 요청에 싣는다.
+  Map<String, dynamic> _signupExtras({
+    String? inviteCode,
+    String? name,
+    String? relation,
+  }) {
+    final trimmed = name?.trim();
+    return {
+      if (inviteCode != null && inviteCode.isNotEmpty) 'inviteCode': inviteCode,
+      if (trimmed != null && trimmed.isNotEmpty) 'name': trimmed,
+      if (relation != null && relation.isNotEmpty) 'relation': relation,
+    };
   }
 
   /// Face-ID-first: Firebase SMS 인증 결과로 번호를 연결 → 정식 세션 토큰.
@@ -177,15 +219,22 @@ class AuthApi {
   ///
   ///   POST $kFirebaseVerifyPath
   ///   `Authorization: Bearer <onboardingToken>`
-  ///   `{ "idToken": "<Firebase ID token>" }`
-  ///   → data: { protectorId, accessToken, refreshToken, onboardingCompleted }
+  ///   `{ "idToken": "<Firebase ID token>", "inviteCode"?, "name"?, "relation"? }`
+  ///   → data: { protectorId, accessToken, refreshToken, onboardingCompleted,
+  ///             linkedUser }
   Future<AuthResult> attachPhoneWithFirebase({
     required String onboardingToken,
     required String idToken,
+    String? inviteCode,
+    String? name,
+    String? relation,
   }) async {
     final d = await _post(
       kFirebaseVerifyPath,
-      {'idToken': idToken},
+      {
+        'idToken': idToken,
+        ..._signupExtras(inviteCode: inviteCode, name: name, relation: relation),
+      },
       bearer: onboardingToken,
     );
     return _toResult(d);
@@ -226,10 +275,14 @@ class AuthApi {
     return _toResult(d);
   }
 
-  AuthResult _toResult(Map<String, dynamic> d) => AuthResult(
-        protectorId: d['protectorId'] as int,
-        accessToken: d['accessToken'] as String,
-        refreshToken: d['refreshToken'] as String,
-        onboardingCompleted: d['onboardingCompleted'] == true,
-      );
+  AuthResult _toResult(Map<String, dynamic> d) {
+    final linked = d['linkedUser'] as Map<String, dynamic>?;
+    return AuthResult(
+      protectorId: d['protectorId'] as int,
+      accessToken: d['accessToken'] as String,
+      refreshToken: d['refreshToken'] as String,
+      onboardingCompleted: d['onboardingCompleted'] == true,
+      linkedUser: linked == null ? null : LinkedUser.fromJson(linked),
+    );
+  }
 }

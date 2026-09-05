@@ -3,7 +3,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import '../main_shell.dart';
+import '../services/session_store.dart';
 import '../services/settings_api.dart';
+import 'first_registration_flow.dart';
 
 const Color _background = Color(0xFFFBF6EE);
 const Color _brown = Color(0xFF9B674C);
@@ -49,13 +51,36 @@ class _InviteCodeInputScreenState extends State<InviteCodeInputScreen> {
     );
   }
 
-  /// 코드를 서버에 보내 가족으로 연결한다.
-  /// 없는 코드·이미 쓴 코드·기한 지난 코드는 서버가 사유를 알려준다.
+  /// 코드를 확인한다. 없는 코드·이미 쓴 코드·기한 지난 코드는 서버가 사유를 알려준다.
+  ///
+  /// 아직 가입 전이라면(토큰 없음) 코드가 쓸 수 있는지만 확인하고 가입 흐름으로
+  /// 넘긴다. 합류는 전화번호 인증이 끝나는 순간 서버가 함께 처리한다.
+  /// 이미 로그인한 사람이 이 화면에 오면 예전처럼 바로 연결한다.
   Future<void> _connect() async {
     if (_code.length != 6 || _busy) return;
 
     setState(() => _busy = true);
     try {
+      final token = await SessionStore.accessToken();
+      if (token == null || token.isEmpty) {
+        final preview = await _api.checkInviteCode(_code);
+        if (!mounted) return;
+        if (widget.onConnected != null) {
+          widget.onConnected!(_code);
+          return;
+        }
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => FirstRegistrationFlow(
+              inviteCode: _code,
+              elderName: preview.userName,
+            ),
+          ),
+        );
+        return;
+      }
+
       final linked = await _api.acceptInviteCode(_code);
       if (!mounted) return;
       _snack('${linked.name}님의 가족으로 연결되었어요.');
@@ -116,7 +141,7 @@ class _InviteCodeInputScreenState extends State<InviteCodeInputScreen> {
                   ),
                   SizedBox(height: 24.h),
                   Text(
-                    '2 / 2 단계',
+                    '1 / 2 단계',
                     style: TextStyle(
                       color: _brown,
                       fontSize: 11.sp,
