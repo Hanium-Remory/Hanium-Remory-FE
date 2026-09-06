@@ -45,6 +45,7 @@ dependencies:
   record: ^7.1.1
   firebase_core: ^4.14.0
   firebase_auth: ^6.6.1
+  firebase_messaging: ^16.6.0
   share_plus: ^13.3.0
   audioplayers: ^6.8.1
 

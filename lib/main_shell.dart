@@ -11,6 +11,7 @@ import '4. home/home_and_alert_center.dart';
 import '5. memory/memory_add_flow.dart';
 import '6. chat/family_chat_screen.dart';
 import '9. set/settings_flow.dart';
+import 'services/push_service.dart';
 
 const Color _bg = Color(0xFFFBF6EE);
 const Color _brown = Color(0xFF936249);
@@ -62,6 +63,14 @@ class MainShell extends StatefulWidget {
 class _MainShellState extends State<MainShell> {
   late int _index = widget.initialTab.index;
   int _memoryRevision = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    // 로그인·가입·앱 재시작이 전부 이 셸로 들어오므로, 푸시 등록은 여기 한 곳에
+    // 둔다. 같은 토큰을 다시 올려도 서버가 갱신만 하고 넘어간다.
+    PushService.start();
+  }
 
   void _select(int index) {
     if (index == _index && index != AppTab.memory.index) return;

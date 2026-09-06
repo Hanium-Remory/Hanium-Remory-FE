@@ -6,6 +6,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../1. splash_onboarding/splash_screen.dart';
+import '../services/push_service.dart';
 import '../services/session_store.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:share_plus/share_plus.dart';
@@ -919,6 +920,9 @@ class _MyProfileEditScreenState extends State<MyProfileEditScreen> {
     if (ok != true) return;
 
     try {
+      // 계정이 사라지면 서버가 토큰까지 함께 지우지만, 탈퇴가 실패했을 때를
+      // 대비해 먼저 끊는다. 실패하면 다음에 앱을 열 때 다시 등록된다.
+      await PushService.stop();
       await _api.withdraw();
       await SessionStore.clear();
       if (!mounted) return;

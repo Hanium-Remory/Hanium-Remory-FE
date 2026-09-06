@@ -160,6 +160,19 @@ class SettingsApi {
 
   Future<void> withdraw() async => _send('DELETE', '/protectors/me');
 
+  // ── 푸시 토큰 ──────────────────────────────────────
+  /// 이 폰의 FCM 토큰을 등록한다. 같은 토큰을 다시 보내도 안전하다.
+  Future<void> registerPushToken(String token, {String platform = 'android'}) async =>
+      _send(
+        'POST',
+        '/protectors/me/push-tokens',
+        body: {'token': token, 'platform': platform},
+      );
+
+  /// 로그아웃할 때 이 폰의 토큰을 지운다.
+  Future<void> unregisterPushToken(String token) async =>
+      _send('DELETE', '/protectors/me/push-tokens', body: {'token': token});
+
   // ── 어르신 정보 ────────────────────────────────────
   Future<ElderUser> user(int userId) async =>
       ElderUser.fromJson(await _get('/users/$userId'));
@@ -432,6 +445,32 @@ class SettingsApi {
   /// 홈에 필요한 값(연결 상태·감정·활동·안 읽은 수)을 한 번에 받아온다.
   Future<HomeSummary> home(int userId) async =>
       HomeSummary.fromJson(await _get('/home?userId=$userId'));
+
+  /// 감정 기록(최신순). [date] 를 주면 그 하루치만 받아온다 —
+  /// 리포트 화면이 '그날의 감정 흐름' 을 그릴 때 쓴다.
+  Future<List<EmotionPoint>> emotions(int userId, {DateTime? date}) async {
+    final query = date == null ? '' : '?date=${_ymd(date)}';
+    final d = await _send('GET', '/users/$userId/emotions$query');
+    return ((d as List?) ?? [])
+        .map((e) => EmotionPoint.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// 활동 타임라인(최신순). [date] 를 주면 그 하루치만 받아온다 —
+  /// 리포트 화면이 '그날의 일과' 를 보여줄 때 쓴다.
+  Future<List<ActivityItem>> activities(int userId, {DateTime? date}) async {
+    final query = date == null ? '' : '?date=${_ymd(date)}';
+    final d = await _send('GET', '/users/$userId/activities$query');
+    return ((d as List?) ?? [])
+        .map((e) => ActivityItem.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// 서버가 받는 날짜 형식(YYYY-MM-DD). 시간대 변환 없이 그 날짜 그대로 보낸다.
+  static String _ymd(DateTime d) =>
+      '${d.year.toString().padLeft(4, '0')}-'
+      '${d.month.toString().padLeft(2, '0')}-'
+      '${d.day.toString().padLeft(2, '0')}';
 
   // ── 알림 ───────────────────────────────────────────
   /// 내 알림 목록(최신순, 삭제한 것 제외).
@@ -1041,6 +1080,7 @@ class AppNotification {
 class WeeklyReportData {
   WeeklyReportData({
     required this.reportId,
+    this.weekStart,
     required this.totalConversationCount,
     required this.familyInteractionCount,
     this.avgEmotionScore,
@@ -1053,6 +1093,9 @@ class WeeklyReportData {
   factory WeeklyReportData.fromJson(Map<String, dynamic> json) =>
       WeeklyReportData(
         reportId: json['reportId'] as int,
+        weekStart: json['weekStart'] == null
+            ? null
+            : DateTime.parse(json['weekStart'] as String),
         totalConversationCount: (json['totalConversationCount'] as int?) ?? 0,
         familyInteractionCount: (json['familyInteractionCount'] as int?) ?? 0,
         avgEmotionScore: json['avgEmotionScore'] as int?,
@@ -1065,6 +1108,8 @@ class WeeklyReportData {
       );
 
   final int reportId;
+  /// 어느 주의 요약인지 — 그 주 월요일. 만들어진 시각(createdAt)과 다르다.
+  final DateTime? weekStart;
   final int totalConversationCount;
   final int familyInteractionCount;
 
