@@ -213,7 +213,11 @@ class MemoryTypeScreen extends StatelessWidget {
                         ),
                         decoration: InputDecoration(
                           hintText:
-                              '예: 자녀 김기억(45세), 김마음(42세)\n손주 김서연(12세), 김도윤(9세)',
+                              '예: 자녀 김기억(45세), 김마음(42세)\n'
+                              '손주 김서연(12세), 김도윤(9세)\n\n'
+                              '좋아하시는 음식 - 된장찌개, 삶은 옥수수\n'
+                              '좋아하시는 노래 - 찔레꽃\n'
+                              '싫어하시는 것 - 시끄러운 소리',
                           hintStyle: TextStyle(
                             fontSize: 13.sp,
                             height: 1.6,
@@ -753,7 +757,7 @@ class _TypeGuide extends StatelessWidget {
         SizedBox(height: 4.h),
         _TypeGuideLine(
           term: '새 기억',
-          body: '가족이 누구인지 같은, 알아두면 좋을 것들을 적어요.',
+          body: '가족이 누구인지, 좋아하시는 음식·노래처럼 알아두면 좋을 것들.',
         ),
       ],
     );
