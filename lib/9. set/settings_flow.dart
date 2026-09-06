@@ -56,6 +56,18 @@ class _HubData {
   final String appVersion;
 }
 
+/// 목소리 한 줄 아래에 적을 말. 누가 등록한 것인지와 지금 상태를 함께 준다.
+///
+/// 등록자를 안 적으면 목록이 그냥 이름 나열로 보인다. 내 폰에서 등록한 것만
+/// 있는 줄 알기 쉬운데, 실제로는 가족 누구 것이든 이 인형 것이다.
+String _voiceSubtitle(DeviceVoice voice) {
+  final status = voice.statusText;
+  if (voice.isBuiltIn) return '인형에 들어 있는 목소리 · $status';
+  final who = voice.ownerLabel;
+  if (who.isEmpty) return '가족이 등록 · $status';
+  return '$who 님이 등록 · $status';
+}
+
 Future<_HubData> _loadHub() async {
   final profile = await _api.myProfile();
   final user = profile.mainUser;
@@ -1276,6 +1288,15 @@ class _DollSettingsBody extends StatelessWidget {
         ),
         SizedBox(height: 18.h),
         _Label('인형 목소리'),
+        // 가족 누구의 목소리든 이 인형 것이라, 등록하면 가족 모두에게 보인다.
+        // 화면에 적어 두지 않으면 '내 폰에서 등록한 것' 으로 오해하기 쉽다.
+        Padding(
+          padding: EdgeInsets.only(bottom: 8.h),
+          child: Text(
+            '가족 누구나 등록할 수 있고, 등록하면 가족 모두에게 보여요.',
+            style: _caption(),
+          ),
+        ),
         if (device.voices.isEmpty)
           Container(
             padding: const EdgeInsets.all(16),
@@ -1289,7 +1310,7 @@ class _DollSettingsBody extends StatelessWidget {
                   (voice) => _VoiceRow(
                     audioUrl: voice.audioUrl,
                     name: voice.name,
-                    subtitle: voice.statusText,
+                    subtitle: _voiceSubtitle(voice),
                     checked: voice.isDefault,
                     progress: voice.isTraining ? voice.progress / 100 : null,
                     onTap: () => _selectVoice(context, voice),

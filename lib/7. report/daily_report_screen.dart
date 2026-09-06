@@ -5,6 +5,7 @@ import '../4. home/home_and_alert_center.dart'
     show activityStyleOf, activityTitleOf, emotionHeightOf;
 import '../main_shell.dart';
 import '../services/settings_api.dart';
+import 'report_calendar_sheet.dart';
 
 const Color _bg = Color(0xFFFBF6EE);
 const Color _brown = Color(0xFF936249);
@@ -57,6 +58,9 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
   /// 그 날의 감정 기록(오래된 순). 그래프도 아래 한 줄 설명도 여기서 나온다.
   List<EmotionPoint> _emotions = [];
   List<ActivityItem> _routine = [];
+
+  /// 리포트가 있는 날들. 달력이 어느 날에 점을 찍을지 정하는 데 쓴다.
+  Set<DateTime> _reportDays = {};
   bool _loading = true;
   String? _error;
 
@@ -87,8 +91,15 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
       final report = await _api.dailyReport(user.userId, offset: _offset);
       final emotions = await _emotionsFor(user.userId, report);
       final routine = await _routineFor(user.userId, report);
+      // 달력이 어느 날에 점을 찍을지. 못 받아도 리포트는 보여준다 —
+      // 날짜를 눌렀을 때만 달력이 비어 보인다.
+      Set<DateTime> days = {};
+      try {
+        days = await _api.dailyReportDates(user.userId);
+      } catch (_) {}
       if (!mounted) return;
       setState(() {
+        _reportDays = days;
         _name = user.name;
         _report = report;
         _emotions = emotions;
@@ -131,6 +142,50 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
         _report = report;
         _emotions = emotions;
         _routine = routine;
+        _stepping = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _stepping = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('리포트를 불러오지 못했어요: $e')));
+    }
+  }
+
+  /// 달력을 열어 날짜를 고르고, 고른 날 리포트로 옮긴다.
+  Future<void> _pickDate() async {
+    final userId = _userId;
+    if (userId == null || _stepping) return;
+
+    final picked = await showReportCalendar(
+      context,
+      markedDays: _reportDays,
+      focusedDay: _report?.reportDate ?? DateTime.now(),
+    );
+    if (picked == null || !mounted) return;
+
+    setState(() => _stepping = true);
+    try {
+      final report = await _api.dailyReportOn(userId, picked);
+      if (!mounted) return;
+      if (report == null) {
+        setState(() => _stepping = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('그날은 리포트가 없어요.')),
+        );
+        return;
+      }
+      final emotions = await _emotionsFor(userId, report);
+      final routine = await _routineFor(userId, report);
+      if (!mounted) return;
+      setState(() {
+        _report = report;
+        _emotions = emotions;
+        _routine = routine;
+        // 날짜로 건너뛰면 '몇 번째로 최근인지' 를 알 수 없다. < > 가 이 자리를
+        // 기준으로 다시 세도록 offset 을 비운 상태로 둔다.
+        _offset = -1;
         _stepping = false;
       });
     } catch (e) {
@@ -217,6 +272,7 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
             onNewer: () => _step(-1),
             canGoNewer: _offset > 0,
             isLatest: _offset == 0,
+            onPickDate: _pickDate,
           ),
           SizedBox(height: 10.h),
           Expanded(
@@ -261,7 +317,13 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
                           _StoryCard(turn: turn),
                       ] else
                         _notReadyYet('이 날은 옮겨 둘 이야기가 없어요.'),
-                      SizedBox(height: 10.h),
+                      SizedBox(height: 14.h),
+                      if ((report.dayStory ?? '').isNotEmpty) ...[
+                        Text('오늘 하루', style: _sectionTitle()),
+                        SizedBox(height: 8.h),
+                        _DayStoryCard(text: report.dayStory!),
+                        SizedBox(height: 14.h),
+                      ],
                       Text('일과', style: _sectionTitle()),
                       if (_routine.isNotEmpty) ...[
                         SizedBox(height: 8.h),
@@ -485,6 +547,24 @@ class _WeeklyReportScreenState extends State<WeeklyReportScreen> {
                           ],
                         ),
                       ),
+                      if (report.dailyEmotions.isNotEmpty) ...[
+                        SizedBox(height: 14.h),
+                        Text('요일별 감정', style: _sectionTitle()),
+                        SizedBox(height: 8.h),
+                        _WeekEmotionCard(days: report.dailyEmotions),
+                      ],
+                      if (report.keywords.isNotEmpty) ...[
+                        SizedBox(height: 14.h),
+                        Text('자주 나눈 키워드', style: _sectionTitle()),
+                        SizedBox(height: 8.h),
+                        _KeywordCard(keywords: report.keywords),
+                      ],
+                      if ((report.weekStory ?? '').isNotEmpty) ...[
+                        SizedBox(height: 14.h),
+                        Text('한 주를 돌아보면', style: _sectionTitle()),
+                        SizedBox(height: 8.h),
+                        _DayStoryCard(text: report.weekStory!),
+                      ],
                     ],
                   ),
           ),
@@ -653,6 +733,7 @@ class _Header extends StatelessWidget {
     required this.onNewer,
     required this.canGoNewer,
     required this.isLatest,
+    this.onPickDate,
   });
 
   final String name;
@@ -668,12 +749,26 @@ class _Header extends StatelessWidget {
   /// 가장 최근 리포트인지(제목 문구가 달라진다).
   final bool isLatest;
 
+  /// 날짜를 눌렀을 때. 달력을 연다.
+  final VoidCallback? onPickDate;
+
   static const List<String> _weekdays = [
     '월요일', '화요일', '수요일', '목요일', '금요일', '토요일', '일요일',
   ];
 
   /// 좌우 버튼 폭. 가운데 제목이 실제로 화면 중앙에 오도록 맞춘다.
   static const double _sideWidth = 44;
+
+  /// 며칠 전인지. 오늘·어제는 날짜보다 그렇게 부르는 편이 빨리 읽힌다.
+  String _relativeLabel(DateTime day) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final gap = today.difference(DateTime(day.year, day.month, day.day)).inDays;
+    if (gap <= 0) return '오늘';
+    if (gap == 1) return '어제';
+    if (gap < 7) return '$gap일 전';
+    return '${day.month}월 ${day.day}일';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -707,7 +802,7 @@ class _Header extends StatelessWidget {
                   fontWeight: FontWeight.w900,
                 ),
               ),
-              const SizedBox(height: 1),
+              SizedBox(height: 6.h),
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -716,12 +811,39 @@ class _Header extends StatelessWidget {
                     tooltip: '이전 리포트',
                     onTap: onOlder,
                   ),
-                  Text(
-                    dateText,
-                    style: const TextStyle(
-                      fontSize: 9,
-                      color: _muted,
-                      fontWeight: FontWeight.w700,
+                  // 눌러서 달력을 연다. 며칠 전인지를 크게, 날짜를 작게 둔다 —
+                  // 대부분은 '오늘' 인지만 알면 되고, 정확한 날짜는 그다음이다.
+                  Flexible(
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: onPickDate,
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: 8.w,
+                          vertical: 2.h,
+                        ),
+                        child: Column(
+                          children: [
+                            Text(
+                              _relativeLabel(day),
+                              style: TextStyle(
+                                fontSize: 15.sp,
+                                color: _dark,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            SizedBox(height: 1.h),
+                            Text(
+                              dateText,
+                              style: TextStyle(
+                                fontSize: 10.sp,
+                                color: _muted,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
                   _StepArrow(
@@ -1006,6 +1128,168 @@ class _SpokenLine extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// 하루가 어떻게 흘렀는지 풀어 쓴 글. 위의 '오늘의 요약' 은 큰 글씨 한 줄이고,
+/// 여기는 읽어 내려가는 글이라 글자를 작게 두고 줄 간격을 넉넉히 준다.
+/// 요일별 감정. 일곱 칸을 늘 그린다 — 기록이 없는 날은 옅은 막대로 두어
+/// 그날이 빠졌다는 것 자체가 보이게 한다.
+class _WeekEmotionCard extends StatelessWidget {
+  const _WeekEmotionCard({required this.days});
+
+  final List<DayEmotion> days;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
+      decoration: _cardDecoration(),
+      child: Column(
+        children: [
+          SizedBox(
+            height: 76.h,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                for (var i = 0; i < days.length; i++) ...[
+                  if (i > 0) SizedBox(width: 6.w),
+                  Expanded(child: _EmotionBar(day: days[i])),
+                ],
+              ],
+            ),
+          ),
+          SizedBox(height: 6.h),
+          Row(
+            children: [
+              for (var i = 0; i < days.length; i++) ...[
+                if (i > 0) SizedBox(width: 6.w),
+                Expanded(
+                  child: Text(
+                    days[i].weekday,
+                    textAlign: TextAlign.center,
+                    style: _tiny(color: _muted),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EmotionBar extends StatelessWidget {
+  const _EmotionBar({required this.day});
+
+  final DayEmotion day;
+
+  @override
+  Widget build(BuildContext context) {
+    final recorded = day.emotion != null;
+    // 감정 높이는 홈·데일리 그래프와 같은 기준을 쓴다. 세 화면이 같은 하루를
+    // 다르게 보여주면 안 된다.
+    final height = recorded ? emotionHeightOf(day.emotion) : 0.12;
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.end,
+      children: [
+        if (recorded && day.score != null) ...[
+          Text('${day.score}', style: _tiny(color: _brown)),
+          SizedBox(height: 3.h),
+        ],
+        FractionallySizedBox(
+          heightFactor: height.clamp(0.12, 1.0),
+          child: Container(
+            decoration: BoxDecoration(
+              color: recorded ? _yellow : const Color(0xFFEDE4DA),
+              borderRadius: BorderRadius.circular(6.r),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// 자주 나온 이야깃거리. 횟수는 서버가 실제로 센 값이라 그대로 보여준다.
+class _KeywordCard extends StatelessWidget {
+  const _KeywordCard({required this.keywords});
+
+  final List<WeekKeyword> keywords;
+
+  @override
+  Widget build(BuildContext context) {
+    final most = keywords.first.count.clamp(1, 1 << 30);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: _cardDecoration(),
+      child: Column(
+        children: [
+          for (var i = 0; i < keywords.length; i++) ...[
+            if (i > 0) SizedBox(height: 10.h),
+            Row(
+              children: [
+                SizedBox(
+                  width: 14.w,
+                  child: Text('${i + 1}', style: _tiny(color: _brown)),
+                ),
+                SizedBox(
+                  width: 58.w,
+                  child: Text(
+                    keywords[i].word,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12.sp,
+                      color: _dark,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(99.r),
+                    child: LinearProgressIndicator(
+                      value: keywords[i].count / most,
+                      minHeight: 7.h,
+                      backgroundColor: const Color(0xFFF1E9E1),
+                      valueColor: const AlwaysStoppedAnimation(_brown),
+                    ),
+                  ),
+                ),
+                SizedBox(width: 8.w),
+                Text('${keywords[i].count}번', style: _tiny(color: _muted)),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _DayStoryCard extends StatelessWidget {
+  const _DayStoryCard({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: _cardDecoration(),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 12.sp,
+          height: 1.7,
+          color: _dark,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
     );
   }
 }

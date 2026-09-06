@@ -7,14 +7,16 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_application_1/services/settings_api.dart';
 
-DailyReportData _parse(Object? excerpt) => DailyReportData.fromJson({
-  'reportId': 1,
-  'reportDate': '2026-09-06',
-  'conversationCount': 6,
-  'familyInteractionCount': 0,
-  'summary': '요약',
-  'excerpt': excerpt,
-});
+DailyReportData _parse(Object? excerpt, {Object? dayStory}) =>
+    DailyReportData.fromJson({
+      'reportId': 1,
+      'reportDate': '2026-09-06',
+      'conversationCount': 6,
+      'familyInteractionCount': 0,
+      'summary': '요약',
+      'excerpt': excerpt,
+      'dayStory': dayStory,
+    });
 
 void main() {
   test('발췌를 대화 대목으로 읽는다', () {
@@ -58,5 +60,27 @@ void main() {
       'familyInteractionCount': 0,
     });
     expect(report.excerpt, isEmpty);
+  });
+
+  // ── 하루 이야기 ──
+  // 화면 맨 위 '오늘의 요약' 과 다른 자리다. 요약은 큰 글씨 한 줄,
+  // 이쪽은 대화 발췌 아래에서 하루를 이어서 들려주는 한 문단이다.
+  test('머리말과 따로 읽는다', () {
+    final report = _parse([], dayStory: '아침에는 무릎이 불편하셨지만 오후에는 편안해 보이셨어요.');
+    expect(report.summary, '요약');
+    expect(report.dayStory, '아침에는 무릎이 불편하셨지만 오후에는 편안해 보이셨어요.');
+  });
+
+  test('하루 이야기가 없는 날은 비어 있다', () {
+    expect(_parse([]).dayStory, isNull);
+  });
+
+  test('dayStory 를 안 주는 예전 서버와도 맞물린다', () {
+    final report = DailyReportData.fromJson({
+      'reportId': 1,
+      'conversationCount': 0,
+      'familyInteractionCount': 0,
+    });
+    expect(report.dayStory, isNull);
   });
 }

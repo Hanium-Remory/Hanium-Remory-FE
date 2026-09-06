@@ -529,6 +529,26 @@ class SettingsApi {
     return DailyReportData.fromJson(d as Map<String, dynamic>);
   }
 
+  /// 그날 리포트. 달력에서 고른 날은 '몇 번째로 최근인지' 를 알 수 없어
+  /// 날짜로 묻는다. 그날 것이 없으면 null 이다.
+  Future<DailyReportData?> dailyReportOn(int userId, DateTime day) async {
+    final d = await _send(
+      'GET',
+      '/users/$userId/reports/daily?date=${_ymd(day)}',
+    );
+    if (d == null) return null;
+    return DailyReportData.fromJson(d as Map<String, dynamic>);
+  }
+
+  /// 리포트가 있는 날들. 달력이 어느 날에 점을 찍을지 정하는 데 쓴다.
+  Future<Set<DateTime>> dailyReportDates(int userId) async {
+    final d = await _send('GET', '/users/$userId/reports/daily/dates');
+    return {
+      for (final s in (d as List?) ?? [])
+        if (DateTime.tryParse(s as String) != null) DateTime.parse(s),
+    };
+  }
+
   /// 주간 리포트. [offset] 0 이 가장 최근, 1 이 그 전주치다.
   Future<WeeklyReportData?> weeklyReport(int userId, {int offset = 0}) async {
     final d = await _send(
@@ -1123,6 +1143,9 @@ class WeeklyReportData {
     this.dominantEmotion,
     required this.emergencyAlertCount,
     this.weeklySummary,
+    this.weekStory,
+    this.keywords = const [],
+    this.dailyEmotions = const [],
     this.createdAt,
   });
 
@@ -1138,6 +1161,13 @@ class WeeklyReportData {
         dominantEmotion: json['dominantEmotion'] as String?,
         emergencyAlertCount: (json['emergencyAlertCount'] as int?) ?? 0,
         weeklySummary: json['weeklySummary'] as String?,
+        weekStory: json['weekStory'] as String?,
+        keywords: ((json['keywords'] as List?) ?? [])
+            .map((e) => WeekKeyword.fromJson(e as Map<String, dynamic>))
+            .toList(),
+        dailyEmotions: ((json['dailyEmotions'] as List?) ?? [])
+            .map((e) => DayEmotion.fromJson(e as Map<String, dynamic>))
+            .toList(),
         createdAt: DateTime.tryParse(
           (json['createdAt'] as String?) ?? '',
         )?.toLocal(),
@@ -1154,7 +1184,51 @@ class WeeklyReportData {
   final String? dominantEmotion;
   final int emergencyAlertCount;
   final String? weeklySummary;
+
+  /// 한 주가 어떻게 흘렀는지 풀어 쓴 한 문단. weeklySummary 는 맨 위에 걸리는
+  /// 머리말이고, 이쪽은 아래에서 한 주를 돌아본다.
+  final String? weekStory;
+
+  /// 그 주에 자주 나온 이야깃거리. 잦은 순서다.
+  final List<WeekKeyword> keywords;
+
+  /// 요일별 감정. 늘 일곱 칸이며, 기록이 없는 날은 emotion 이 비어 있다.
+  final List<DayEmotion> dailyEmotions;
   final DateTime? createdAt;
+}
+
+/// 한 주에 자주 나온 이야깃거리 하나.
+class WeekKeyword {
+  WeekKeyword({required this.word, required this.count});
+
+  factory WeekKeyword.fromJson(Map<String, dynamic> json) => WeekKeyword(
+    word: (json['word'] as String?) ?? '',
+    count: (json['count'] as int?) ?? 0,
+  );
+
+  final String word;
+
+  /// 몇 번의 대화에 나왔는지. 서버가 실제로 센 값이다.
+  final int count;
+}
+
+/// 요일 한 칸의 감정.
+class DayEmotion {
+  DayEmotion({required this.weekday, this.emotion, this.score});
+
+  factory DayEmotion.fromJson(Map<String, dynamic> json) => DayEmotion(
+    weekday: (json['weekday'] as String?) ?? '',
+    emotion: json['emotion'] as String?,
+    score: json['score'] as int?,
+  );
+
+  final String weekday;
+
+  /// 그날 가장 잦았던 감정. 기록이 없으면 null.
+  final String? emotion;
+
+  /// 0~100. 기록이 없으면 null.
+  final int? score;
 }
 
 class DailyReportData {
@@ -1167,6 +1241,7 @@ class DailyReportData {
     this.summary,
     this.suggestion,
     this.excerpt = const [],
+    this.dayStory,
     this.createdAt,
   });
 
@@ -1184,6 +1259,7 @@ class DailyReportData {
         excerpt: ((json['excerpt'] as List?) ?? [])
             .map((e) => ConversationTurn.fromJson(e as Map<String, dynamic>))
             .toList(),
+        dayStory: json['dayStory'] as String?,
         createdAt: DateTime.tryParse(
           (json['createdAt'] as String?) ?? '',
         )?.toLocal(),
@@ -1204,6 +1280,10 @@ class DailyReportData {
 
   /// 그날 나눈 이야기에서 몇 대목. 보여줄 게 없던 날은 비어 있다.
   final List<ConversationTurn> excerpt;
+
+  /// 하루가 어떻게 흘렀는지 풀어 쓴 한 문단. summary 는 맨 위에 크게 걸리는
+  /// 머리말이고, 이쪽은 그 아래에서 하루를 이어서 들려준다.
+  final String? dayStory;
   final DateTime? createdAt;
 }
 
@@ -1486,6 +1566,8 @@ class DeviceVoice {
     required this.progress,
     required this.isDefault,
     required this.protectorId,
+    this.ownerName,
+    this.ownerRelation,
     this.audioUrl,
   });
 
@@ -1496,6 +1578,8 @@ class DeviceVoice {
     progress: json['progress'] as int? ?? 0,
     isDefault: json['isDefault'] == true,
     protectorId: json['protectorId'] as int?,
+    ownerName: json['ownerName'] as String?,
+    ownerRelation: json['ownerRelation'] as String?,
     audioUrl: json['audioUrl'] as String?,
   );
 
@@ -1505,6 +1589,18 @@ class DeviceVoice {
   final int progress;
   final bool isDefault;
   final int? protectorId;
+
+  /// 이 목소리를 등록한 가족. 인형에 들어 있는 기본 목소리는 비어 있다.
+  final String? ownerName;
+  final String? ownerRelation;
+
+  /// '딸 김민지' 처럼 부를 이름. 관계를 모르면 이름만 준다.
+  String get ownerLabel {
+    final name = (ownerName ?? '').trim();
+    if (name.isEmpty) return '';
+    final relation = (ownerRelation ?? '').trim();
+    return relation.isEmpty ? name : '$relation $name';
+  }
 
   bool get isBuiltIn => protectorId == null;
 
