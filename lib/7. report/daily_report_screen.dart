@@ -491,6 +491,18 @@ class _WeeklyReportScreenState extends State<WeeklyReportScreen> {
                           ],
                         ),
                       ),
+                      if (report.dailyEmotions.isNotEmpty) ...[
+                        SizedBox(height: 14.h),
+                        Text('요일별 감정', style: _sectionTitle()),
+                        SizedBox(height: 8.h),
+                        _WeekEmotionCard(days: report.dailyEmotions),
+                      ],
+                      if (report.keywords.isNotEmpty) ...[
+                        SizedBox(height: 14.h),
+                        Text('자주 나눈 키워드', style: _sectionTitle()),
+                        SizedBox(height: 8.h),
+                        _KeywordCard(keywords: report.keywords),
+                      ],
                       if ((report.weekStory ?? '').isNotEmpty) ...[
                         SizedBox(height: 14.h),
                         Text('한 주를 돌아보면', style: _sectionTitle()),
@@ -1024,6 +1036,142 @@ class _SpokenLine extends StatelessWidget {
 
 /// 하루가 어떻게 흘렀는지 풀어 쓴 글. 위의 '오늘의 요약' 은 큰 글씨 한 줄이고,
 /// 여기는 읽어 내려가는 글이라 글자를 작게 두고 줄 간격을 넉넉히 준다.
+/// 요일별 감정. 일곱 칸을 늘 그린다 — 기록이 없는 날은 옅은 막대로 두어
+/// 그날이 빠졌다는 것 자체가 보이게 한다.
+class _WeekEmotionCard extends StatelessWidget {
+  const _WeekEmotionCard({required this.days});
+
+  final List<DayEmotion> days;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
+      decoration: _cardDecoration(),
+      child: Column(
+        children: [
+          SizedBox(
+            height: 76.h,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                for (var i = 0; i < days.length; i++) ...[
+                  if (i > 0) SizedBox(width: 6.w),
+                  Expanded(child: _EmotionBar(day: days[i])),
+                ],
+              ],
+            ),
+          ),
+          SizedBox(height: 6.h),
+          Row(
+            children: [
+              for (var i = 0; i < days.length; i++) ...[
+                if (i > 0) SizedBox(width: 6.w),
+                Expanded(
+                  child: Text(
+                    days[i].weekday,
+                    textAlign: TextAlign.center,
+                    style: _tiny(color: _muted),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EmotionBar extends StatelessWidget {
+  const _EmotionBar({required this.day});
+
+  final DayEmotion day;
+
+  @override
+  Widget build(BuildContext context) {
+    final recorded = day.emotion != null;
+    // 감정 높이는 홈·데일리 그래프와 같은 기준을 쓴다. 세 화면이 같은 하루를
+    // 다르게 보여주면 안 된다.
+    final height = recorded ? emotionHeightOf(day.emotion) : 0.12;
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.end,
+      children: [
+        if (recorded && day.score != null) ...[
+          Text('${day.score}', style: _tiny(color: _brown)),
+          SizedBox(height: 3.h),
+        ],
+        FractionallySizedBox(
+          heightFactor: height.clamp(0.12, 1.0),
+          child: Container(
+            decoration: BoxDecoration(
+              color: recorded ? _yellow : const Color(0xFFEDE4DA),
+              borderRadius: BorderRadius.circular(6.r),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// 자주 나온 이야깃거리. 횟수는 서버가 실제로 센 값이라 그대로 보여준다.
+class _KeywordCard extends StatelessWidget {
+  const _KeywordCard({required this.keywords});
+
+  final List<WeekKeyword> keywords;
+
+  @override
+  Widget build(BuildContext context) {
+    final most = keywords.first.count.clamp(1, 1 << 30);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: _cardDecoration(),
+      child: Column(
+        children: [
+          for (var i = 0; i < keywords.length; i++) ...[
+            if (i > 0) SizedBox(height: 10.h),
+            Row(
+              children: [
+                SizedBox(
+                  width: 14.w,
+                  child: Text('${i + 1}', style: _tiny(color: _brown)),
+                ),
+                SizedBox(
+                  width: 58.w,
+                  child: Text(
+                    keywords[i].word,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12.sp,
+                      color: _dark,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(99.r),
+                    child: LinearProgressIndicator(
+                      value: keywords[i].count / most,
+                      minHeight: 7.h,
+                      backgroundColor: const Color(0xFFF1E9E1),
+                      valueColor: const AlwaysStoppedAnimation(_brown),
+                    ),
+                  ),
+                ),
+                SizedBox(width: 8.w),
+                Text('${keywords[i].count}번', style: _tiny(color: _muted)),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 class _DayStoryCard extends StatelessWidget {
   const _DayStoryCard({required this.text});
 

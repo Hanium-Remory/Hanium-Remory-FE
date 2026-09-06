@@ -1124,6 +1124,8 @@ class WeeklyReportData {
     required this.emergencyAlertCount,
     this.weeklySummary,
     this.weekStory,
+    this.keywords = const [],
+    this.dailyEmotions = const [],
     this.createdAt,
   });
 
@@ -1140,6 +1142,12 @@ class WeeklyReportData {
         emergencyAlertCount: (json['emergencyAlertCount'] as int?) ?? 0,
         weeklySummary: json['weeklySummary'] as String?,
         weekStory: json['weekStory'] as String?,
+        keywords: ((json['keywords'] as List?) ?? [])
+            .map((e) => WeekKeyword.fromJson(e as Map<String, dynamic>))
+            .toList(),
+        dailyEmotions: ((json['dailyEmotions'] as List?) ?? [])
+            .map((e) => DayEmotion.fromJson(e as Map<String, dynamic>))
+            .toList(),
         createdAt: DateTime.tryParse(
           (json['createdAt'] as String?) ?? '',
         )?.toLocal(),
@@ -1160,7 +1168,47 @@ class WeeklyReportData {
   /// 한 주가 어떻게 흘렀는지 풀어 쓴 한 문단. weeklySummary 는 맨 위에 걸리는
   /// 머리말이고, 이쪽은 아래에서 한 주를 돌아본다.
   final String? weekStory;
+
+  /// 그 주에 자주 나온 이야깃거리. 잦은 순서다.
+  final List<WeekKeyword> keywords;
+
+  /// 요일별 감정. 늘 일곱 칸이며, 기록이 없는 날은 emotion 이 비어 있다.
+  final List<DayEmotion> dailyEmotions;
   final DateTime? createdAt;
+}
+
+/// 한 주에 자주 나온 이야깃거리 하나.
+class WeekKeyword {
+  WeekKeyword({required this.word, required this.count});
+
+  factory WeekKeyword.fromJson(Map<String, dynamic> json) => WeekKeyword(
+    word: (json['word'] as String?) ?? '',
+    count: (json['count'] as int?) ?? 0,
+  );
+
+  final String word;
+
+  /// 몇 번의 대화에 나왔는지. 서버가 실제로 센 값이다.
+  final int count;
+}
+
+/// 요일 한 칸의 감정.
+class DayEmotion {
+  DayEmotion({required this.weekday, this.emotion, this.score});
+
+  factory DayEmotion.fromJson(Map<String, dynamic> json) => DayEmotion(
+    weekday: (json['weekday'] as String?) ?? '',
+    emotion: json['emotion'] as String?,
+    score: json['score'] as int?,
+  );
+
+  final String weekday;
+
+  /// 그날 가장 잦았던 감정. 기록이 없으면 null.
+  final String? emotion;
+
+  /// 0~100. 기록이 없으면 null.
+  final int? score;
 }
 
 class DailyReportData {

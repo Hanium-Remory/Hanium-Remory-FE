@@ -93,6 +93,9 @@ class _FamilyChatScreenState extends State<FamilyChatScreen> {
       await _refresh();
       if (!mounted) return;
       setState(() => _loading = false);
+      // 목록이 그려진 다음에야 내릴 수 있다. _refresh 안에서 부르면 그때는
+      // 아직 로딩 화면이라 스크롤이 붙을 곳이 없어 그냥 버려진다.
+      _scrollToBottom(animate: false);
       _poll = Timer.periodic(_pollInterval, (_) => _refresh());
     } on ApiException catch (e) {
       if (mounted) {
@@ -137,6 +140,51 @@ class _FamilyChatScreenState extends State<FamilyChatScreen> {
     }
   }
 
+  /// 말풍선과 그 사이에 낄 금들을 한 줄로 늘어놓는다.
+  ///
+  /// 한 메시지 앞에 날짜 금이, 뒤에 읽음 금이 함께 붙을 수 있어서 미리
+  /// 조립한다. 자리마다 번호를 세어 맞추면 하나 끼워 넣을 때마다 어긋난다.
+  List<Widget> _buildRows() {
+    // 인형이 어디까지 읽어드렸는지. 그 자리 바로 뒤에 금을 하나 긋는다.
+    // 다 읽어드렸거나 하나도 못 읽어드렸으면 긋지 않는다 — 맨 아래나 맨 위에
+    // 걸린 금은 무엇을 가르는지 알 수 없다.
+    final lastRead = _messages.lastIndexWhere((m) => m.deliveredToDevice);
+    final showRead = lastRead >= 0 && lastRead < _messages.length - 1;
+
+    final rows = <Widget>[];
+    DateTime? shownDay;
+    for (var i = 0; i < _messages.length; i++) {
+      final message = _messages[i];
+      final at = message.at;
+      if (at != null) {
+        final day = DateTime(at.year, at.month, at.day);
+        if (shownDay == null || day != shownDay) {
+          rows.add(_CenterPill(text: _formatDay(day)));
+          shownDay = day;
+        }
+      }
+      rows.add(_MessageRow(message: message));
+      if (showRead && i == lastRead) {
+        rows.add(const _CenterPill(text: '여기까지 읽어드렸어요'));
+      }
+    }
+    return rows;
+  }
+
+  /// 날짜 금에 쓸 말. 오늘·어제는 날짜보다 그렇게 부르는 편이 빨리 읽힌다.
+  String _formatDay(DateTime day) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final gap = today.difference(day).inDays;
+    if (gap == 0) return '오늘';
+    if (gap == 1) return '어제';
+
+    const names = ['월', '화', '수', '목', '금', '토', '일'];
+    final weekday = names[day.weekday - 1];
+    final year = day.year == today.year ? '' : '${day.year}년 ';
+    return '$year${day.month}월 ${day.day}일 $weekday요일';
+  }
+
   /// 서버 메시지를 말풍선이 쓰는 형태로 바꾼다.
   _ChatMessage _toDisplay(ChatMessage m) {
     final mine = m.senderType == 'protector' && m.senderId == _myProtectorId;
@@ -168,6 +216,7 @@ class _FamilyChatScreenState extends State<FamilyChatScreen> {
       imageUrl: m.imageUrl,
       deliveredToDevice: m.deliveredToDevice,
       readCount: m.readCount,
+      at: m.createdAt,
     );
   }
 
@@ -234,14 +283,23 @@ class _FamilyChatScreenState extends State<FamilyChatScreen> {
     }
   }
 
-  void _scrollToBottom() {
+  /// 맨 아래(가장 최근 글)로 내린다.
+  ///
+  /// [animate] 를 끄면 단번에 내려간다. 대화방을 열 때는 훑어 내려가는 모습이
+  /// 보일 이유가 없고, 이미 맨 아래에 있어야 할 자리다.
+  void _scrollToBottom({bool animate = true}) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_scrollController.hasClients) return;
-      _scrollController.animateTo(
-        _scrollController.position.maxScrollExtent,
-        duration: const Duration(milliseconds: 260),
-        curve: Curves.easeOut,
-      );
+      final bottom = _scrollController.position.maxScrollExtent;
+      if (animate) {
+        _scrollController.animateTo(
+          bottom,
+          duration: const Duration(milliseconds: 260),
+          curve: Curves.easeOut,
+        );
+      } else {
+        _scrollController.jumpTo(bottom);
+      }
     });
   }
 
@@ -278,25 +336,13 @@ class _FamilyChatScreenState extends State<FamilyChatScreen> {
         ),
       );
     }
-    // 인형이 어디까지 읽어드렸는지. 그 자리 바로 뒤에 금을 하나 긋는다.
-    // 아직 하나도 못 읽어드렸으면(=-1) 금을 긋지 않는다 — 맨 위에 걸리면
-    // 무엇을 가르는 선인지 알 수 없다.
-    final lastRead = _messages.lastIndexWhere((m) => m.deliveredToDevice);
-    final showDivider = lastRead >= 0 && lastRead < _messages.length - 1;
-
+    final rows = _buildRows();
     return ListView.builder(
       controller: _scrollController,
       physics: const BouncingScrollPhysics(),
       padding: EdgeInsets.only(bottom: 12.h),
-      itemCount: _messages.length,
-      itemBuilder: (context, index) {
-        final row = _MessageRow(message: _messages[index]);
-        if (!showDivider || index != lastRead) return row;
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [row, const _ReadUpToHereDivider()],
-        );
-      },
+      itemCount: rows.length,
+      itemBuilder: (context, index) => rows[index],
     );
   }
 
@@ -492,9 +538,11 @@ class _TinyMember extends StatelessWidget {
   }
 }
 
-/// 인형이 어르신께 여기까지 읽어드렸다는 금. 가운데에 담담하게 둔다.
-class _ReadUpToHereDivider extends StatelessWidget {
-  const _ReadUpToHereDivider();
+/// 말풍선 사이에 끼는 가운데 금. 날짜와 '여기까지 읽어드렸어요' 가 함께 쓴다.
+class _CenterPill extends StatelessWidget {
+  const _CenterPill({required this.text});
+
+  final String text;
 
   @override
   Widget build(BuildContext context) {
@@ -508,7 +556,7 @@ class _ReadUpToHereDivider extends StatelessWidget {
             borderRadius: BorderRadius.circular(99),
           ),
           child: Text(
-            '여기까지 읽어드렸어요',
+            text,
             style: TextStyle(
               fontSize: 11.sp,
               color: const Color(0xFF6B5D53),
@@ -954,6 +1002,7 @@ class _ChatMessage {
     this.imageUrl,
     this.deliveredToDevice = false,
     this.readCount = 0,
+    this.at,
   });
 
   final int messageId;
@@ -971,4 +1020,7 @@ class _ChatMessage {
 
   /// 이 글을 읽은 가족 수.
   final int readCount;
+
+  /// 보낸 시각. 날짜가 바뀌는 자리에 금을 긋는 데 쓴다.
+  final DateTime? at;
 }
