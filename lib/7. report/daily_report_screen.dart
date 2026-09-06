@@ -261,7 +261,13 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
                           _StoryCard(turn: turn),
                       ] else
                         _notReadyYet('이 날은 옮겨 둘 이야기가 없어요.'),
-                      SizedBox(height: 10.h),
+                      SizedBox(height: 14.h),
+                      if ((report.dayStory ?? '').isNotEmpty) ...[
+                        Text('오늘 하루', style: _sectionTitle()),
+                        SizedBox(height: 8.h),
+                        _DayStoryCard(text: report.dayStory!),
+                        SizedBox(height: 14.h),
+                      ],
                       Text('일과', style: _sectionTitle()),
                       if (_routine.isNotEmpty) ...[
                         SizedBox(height: 8.h),
@@ -1006,6 +1012,32 @@ class _SpokenLine extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// 하루가 어떻게 흘렀는지 풀어 쓴 글. 위의 '오늘의 요약' 은 큰 글씨 한 줄이고,
+/// 여기는 읽어 내려가는 글이라 글자를 작게 두고 줄 간격을 넉넉히 준다.
+class _DayStoryCard extends StatelessWidget {
+  const _DayStoryCard({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: _cardDecoration(),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 12.sp,
+          height: 1.7,
+          color: _dark,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
     );
   }
 }

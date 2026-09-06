@@ -1167,6 +1167,7 @@ class DailyReportData {
     this.summary,
     this.suggestion,
     this.excerpt = const [],
+    this.dayStory,
     this.createdAt,
   });
 
@@ -1184,6 +1185,7 @@ class DailyReportData {
         excerpt: ((json['excerpt'] as List?) ?? [])
             .map((e) => ConversationTurn.fromJson(e as Map<String, dynamic>))
             .toList(),
+        dayStory: json['dayStory'] as String?,
         createdAt: DateTime.tryParse(
           (json['createdAt'] as String?) ?? '',
         )?.toLocal(),
@@ -1204,6 +1206,10 @@ class DailyReportData {
 
   /// 그날 나눈 이야기에서 몇 대목. 보여줄 게 없던 날은 비어 있다.
   final List<ConversationTurn> excerpt;
+
+  /// 하루가 어떻게 흘렀는지 풀어 쓴 한 문단. summary 는 맨 위에 크게 걸리는
+  /// 머리말이고, 이쪽은 그 아래에서 하루를 이어서 들려준다.
+  final String? dayStory;
   final DateTime? createdAt;
 }
 
