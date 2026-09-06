@@ -160,6 +160,19 @@ class SettingsApi {
 
   Future<void> withdraw() async => _send('DELETE', '/protectors/me');
 
+  // ── 푸시 토큰 ──────────────────────────────────────
+  /// 이 폰의 FCM 토큰을 등록한다. 같은 토큰을 다시 보내도 안전하다.
+  Future<void> registerPushToken(String token, {String platform = 'android'}) async =>
+      _send(
+        'POST',
+        '/protectors/me/push-tokens',
+        body: {'token': token, 'platform': platform},
+      );
+
+  /// 로그아웃할 때 이 폰의 토큰을 지운다.
+  Future<void> unregisterPushToken(String token) async =>
+      _send('DELETE', '/protectors/me/push-tokens', body: {'token': token});
+
   // ── 어르신 정보 ────────────────────────────────────
   Future<ElderUser> user(int userId) async =>
       ElderUser.fromJson(await _get('/users/$userId'));

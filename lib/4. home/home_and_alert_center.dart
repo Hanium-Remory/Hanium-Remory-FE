@@ -6,6 +6,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import '../7. report/daily_report_screen.dart';
 import '../8. vocie/voice_record_flow.dart';
 import '../main_shell.dart';
+import '../services/push_service.dart';
 import '../services/settings_api.dart';
 
 const Color _bg = Color(0xFFFBF6EE);
@@ -118,12 +119,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // 앱이 떠 있는 동안 온 푸시는 시스템 알림으로 뜨지 않는다. 폴링 주기를
+    // 기다리지 않고 바로 새로 받아 배지를 맞춘다.
+    PushService.arrived.addListener(_refresh);
     _load();
   }
 
   @override
   void dispose() {
     _poll?.cancel();
+    PushService.arrived.removeListener(_refresh);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
