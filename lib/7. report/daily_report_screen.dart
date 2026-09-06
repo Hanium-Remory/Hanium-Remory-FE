@@ -255,7 +255,12 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
                         _notReadyYet('이 날은 기록된 감정이 없어요.'),
                       SizedBox(height: 14.h),
                       Text('오늘 나눈 이야기', style: _sectionTitle()),
-                      _notReadyYet('대화 발췌는 아직 제공되지 않아요.'),
+                      if (report.excerpt.isNotEmpty) ...[
+                        SizedBox(height: 8.h),
+                        for (final turn in report.excerpt)
+                          _StoryCard(turn: turn),
+                      ] else
+                        _notReadyYet('이 날은 옮겨 둘 이야기가 없어요.'),
                       SizedBox(height: 10.h),
                       Text('일과', style: _sectionTitle()),
                       if (_routine.isNotEmpty) ...[
@@ -922,20 +927,22 @@ class _MoodFlowCard extends StatelessWidget {
 // 리포트 응답에 필드가 생기면 바로 쓸 수 있게 디자인을 남겨 둔다.
 // ignore: unused_element
 class _StoryCard extends StatelessWidget {
-  const _StoryCard({
-    required this.time,
-    required this.label,
-    required this.title,
-    required this.tags,
-  });
+  const _StoryCard({required this.turn});
 
-  final String time;
-  final String label;
-  final String title;
-  final List<String> tags;
+  final ConversationTurn turn;
+
+  /// 몇 시쯤 나눈 이야기인지. 분까지는 필요 없다.
+  String get _time {
+    final at = turn.at;
+    if (at == null) return '';
+    final period = at.hour < 12 ? '오전' : '오후';
+    final hour = at.hour % 12 == 0 ? 12 : at.hour % 12;
+    return '$period $hour시쯤';
+  }
 
   @override
   Widget build(BuildContext context) {
+    final time = _time;
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(13),
@@ -943,38 +950,66 @@ class _StoryCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Text(time, style: _tiny(color: _muted)),
-              const Spacer(),
-              _Pill(text: label, color: const Color(0xFFF9EBD9)),
-            ],
-          ),
-          SizedBox(height: 8.h),
-          Text(
-            title,
-            style: const TextStyle(
-              fontSize: 13,
-              height: 1.35,
-              color: _dark,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          SizedBox(height: 9.h),
-          Wrap(
-            spacing: 6,
-            children: [
-              for (final tag in tags)
-                _Pill(text: tag, color: const Color(0xFFF6EFE8)),
-            ],
-          ),
+          if (time.isNotEmpty) ...[
+            Text(time, style: _tiny(color: _muted)),
+            SizedBox(height: 8.h),
+          ],
+          _SpokenLine(who: '어르신', text: turn.user, emphasised: true),
+          if (turn.mori.isNotEmpty) ...[
+            SizedBox(height: 7.h),
+            _SpokenLine(who: '모리', text: turn.mori, emphasised: false),
+          ],
         ],
       ),
     );
   }
 }
 
-// ignore: unused_element
+/// 누가 한 말인지 앞에 두고 그 말을 잇는다. 어르신 말이 주인공이라 진하게 쓴다.
+class _SpokenLine extends StatelessWidget {
+  const _SpokenLine({
+    required this.who,
+    required this.text,
+    required this.emphasised,
+  });
+
+  final String who;
+  final String text;
+  final bool emphasised;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 38.w,
+          child: Text(
+            who,
+            style: TextStyle(
+              fontSize: 10.sp,
+              height: 1.5,
+              color: emphasised ? _brown : _muted,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ),
+        Expanded(
+          child: Text(
+            text,
+            style: TextStyle(
+              fontSize: 12.sp,
+              height: 1.5,
+              color: emphasised ? _dark : _muted,
+              fontWeight: emphasised ? FontWeight.w700 : FontWeight.w600,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _RoutineCard extends StatelessWidget {
   const _RoutineCard({required this.items});
 

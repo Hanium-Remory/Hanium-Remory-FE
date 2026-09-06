@@ -1166,6 +1166,7 @@ class DailyReportData {
     this.emotionSummary,
     this.summary,
     this.suggestion,
+    this.excerpt = const [],
     this.createdAt,
   });
 
@@ -1180,6 +1181,9 @@ class DailyReportData {
         emotionSummary: json['emotionSummary'] as String?,
         summary: json['summary'] as String?,
         suggestion: json['suggestion'] as String?,
+        excerpt: ((json['excerpt'] as List?) ?? [])
+            .map((e) => ConversationTurn.fromJson(e as Map<String, dynamic>))
+            .toList(),
         createdAt: DateTime.tryParse(
           (json['createdAt'] as String?) ?? '',
         )?.toLocal(),
@@ -1197,7 +1201,28 @@ class DailyReportData {
 
   /// 보호자가 오늘 해볼 만한 것. 서버가 못 만들었으면 비어 있다.
   final String? suggestion;
+
+  /// 그날 나눈 이야기에서 몇 대목. 보여줄 게 없던 날은 비어 있다.
+  final List<ConversationTurn> excerpt;
   final DateTime? createdAt;
+}
+
+/// 리포트에 실린 대화 한 대목. 어르신 말과 그때 모리가 한 답이다.
+class ConversationTurn {
+  ConversationTurn({required this.user, required this.mori, this.at});
+
+  factory ConversationTurn.fromJson(Map<String, dynamic> json) =>
+      ConversationTurn(
+        user: (json['user'] as String?) ?? '',
+        mori: (json['mori'] as String?) ?? '',
+        at: DateTime.tryParse((json['at'] as String?) ?? '')?.toLocal(),
+      );
+
+  final String user;
+
+  /// 모리가 답하기 전에 대화가 끊겼으면 비어 있다.
+  final String mori;
+  final DateTime? at;
 }
 
 /// 가족 대화방 메시지 한 건.
