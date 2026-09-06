@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
@@ -661,18 +662,21 @@ class _WeeklyHeader extends StatelessWidget {
               ),
             ),
             Expanded(
-              child: Center(
-                child: Text(
-                  isLatest ? '이번 주 $name님' : '$name님의 주간 리포트',
-                  style: const TextStyle(
-                    fontSize: 16,
-                    color: _dark,
-                    fontWeight: FontWeight.w900,
-                  ),
+              child: Text(
+                isLatest ? '이번 주 $name님' : '$name님의 주간 리포트',
+                style: const TextStyle(
+                  fontSize: 16,
+                  color: _dark,
+                  fontWeight: FontWeight.w900,
                 ),
               ),
             ),
-            const SizedBox(width: _sideWidth),
+            // 데일리의 '주간' 과 짝. 같은 자리에서 되돌아갈 수 있어야 한다.
+            _ModeLink(
+              label: '일간',
+              icon: Icons.arrow_back,
+              onTap: () => Navigator.maybePop(context),
+            ),
           ],
         ),
         SizedBox(height: 10.h),
@@ -857,27 +861,25 @@ class _Header extends StatelessWidget {
                 constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
               ),
             ),
+            // 제목은 왼쪽에 붙인다. 뒤로 가기 화살표 바로 옆에서 시작해야
+            // 누구의 무슨 리포트인지가 먼저 읽힌다.
             Expanded(
-              child: Center(
-                child: Text(
-                  isLatest ? '오늘의 $name님' : '$name님의 리포트',
-                  style: const TextStyle(
-                    fontSize: 16,
-                    color: _dark,
-                    fontWeight: FontWeight.w900,
-                  ),
+              child: Text(
+                isLatest ? '오늘의 $name님' : '$name님의 리포트',
+                style: const TextStyle(
+                  fontSize: 16,
+                  color: _dark,
+                  fontWeight: FontWeight.w900,
                 ),
               ),
             ),
-            SizedBox(
-              width: _sideWidth,
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const WeeklyReportScreen()),
-                ),
-                child: Center(child: Text('주간', style: _smallBrown())),
+            _ModeLink(
+              label: '주간',
+              icon: Icons.arrow_forward,
+              trailing: true,
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const WeeklyReportScreen()),
               ),
             ),
           ],
@@ -932,6 +934,55 @@ class _Header extends StatelessWidget {
           ],
         ),
       ],
+    );
+  }
+}
+
+/// 데일리 ↔ 주간 을 오가는 링크. 글자만 놓아 두면 글자 높이만큼밖에
+/// 눌리지 않아서, 누르는 칸을 손가락에 맞게 따로 넓혀 둔다.
+class _ModeLink extends StatelessWidget {
+  const _ModeLink({
+    required this.label,
+    required this.icon,
+    required this.onTap,
+    this.trailing = false,
+  });
+
+  final String label;
+  final IconData icon;
+
+  /// 화살표를 글자 뒤에 둘지. 주간으로 '나가는' 쪽만 뒤에 둔다.
+  final bool trailing;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final arrow = Icon(icon, size: 13, color: _brown);
+    final text = Text(
+      label,
+      style: const TextStyle(
+        fontSize: 12,
+        color: _brown,
+        fontWeight: FontWeight.w900,
+      ),
+    );
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: onTap,
+        child: Container(
+          height: 44,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          alignment: Alignment.center,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: trailing
+                ? [text, const SizedBox(width: 3), arrow]
+                : [arrow, const SizedBox(width: 3), text],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -1219,6 +1270,17 @@ class _SpokenLine extends StatelessWidget {
 /// 여기는 읽어 내려가는 글이라 글자를 작게 두고 줄 간격을 넉넉히 준다.
 /// 요일별 감정. 일곱 칸을 늘 그린다 — 기록이 없는 날은 옅은 막대로 두어
 /// 그날이 빠졌다는 것 자체가 보이게 한다.
+/// 그 날 그래프의 높이(0~1). 기록이 없으면 null 이라 점도 선도 그리지 않는다.
+/// 점수가 있으면 점수를 쓰고, 없으면 감정 종류의 높이로 물러난다 —
+/// 홈·데일리 그래프와 같은 기준이라 세 화면이 같은 하루를 다르게 보이지 않는다.
+double? weekMoodValueOf(DayEmotion day) {
+  final score = day.score;
+  if (score != null) return (score / 100).clamp(0.0, 1.0);
+  if (day.emotion != null) return emotionHeightOf(day.emotion);
+  return null;
+}
+
+/// 요일별 감정. 점수를 선으로 이어 한 주가 어떻게 흘렀는지 보이게 한다.
 class _WeekEmotionCard extends StatelessWidget {
   const _WeekEmotionCard({required this.days});
 
@@ -1226,36 +1288,34 @@ class _WeekEmotionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final values = [for (final day in days) weekMoodValueOf(day)];
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
       decoration: _cardDecoration(),
       child: Column(
         children: [
           SizedBox(
-            height: 76.h,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                for (var i = 0; i < days.length; i++) ...[
-                  if (i > 0) SizedBox(width: 6.w),
-                  Expanded(child: _EmotionBar(day: days[i])),
-                ],
-              ],
+            height: 88.h,
+            child: CustomPaint(
+              painter: _WeekMoodPainter(values: values, days: days),
+              child: const SizedBox.expand(),
             ),
           ),
           SizedBox(height: 6.h),
           Row(
             children: [
-              for (var i = 0; i < days.length; i++) ...[
-                if (i > 0) SizedBox(width: 6.w),
+              for (var i = 0; i < days.length; i++)
                 Expanded(
                   child: Text(
                     days[i].weekday,
                     textAlign: TextAlign.center,
-                    style: _tiny(color: _muted),
+                    style: _tiny(
+                      color: values[i] == null
+                          ? const Color(0xFFC7B8AE)
+                          : _muted,
+                    ),
                   ),
                 ),
-              ],
             ],
           ),
         ],
@@ -1264,36 +1324,117 @@ class _WeekEmotionCard extends StatelessWidget {
   }
 }
 
-class _EmotionBar extends StatelessWidget {
-  const _EmotionBar({required this.day});
+/// 한 주의 감정 흐름. 기록이 없는 날은 건너뛰지 않고 선을 끊는다 —
+/// 없는 날을 가로질러 이어 버리면 그날도 그만큼이었던 것처럼 읽힌다.
+class _WeekMoodPainter extends CustomPainter {
+  const _WeekMoodPainter({required this.values, required this.days});
 
-  final DayEmotion day;
+  /// 0(바닥)~1(천장). 기록이 없는 날은 null.
+  final List<double?> values;
+  final List<DayEmotion> days;
 
   @override
-  Widget build(BuildContext context) {
-    final recorded = day.emotion != null;
-    // 감정 높이는 홈·데일리 그래프와 같은 기준을 쓴다. 세 화면이 같은 하루를
-    // 다르게 보여주면 안 된다.
-    final height = recorded ? emotionHeightOf(day.emotion) : 0.12;
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.end,
-      children: [
-        if (recorded && day.score != null) ...[
-          Text('${day.score}', style: _tiny(color: _brown)),
-          SizedBox(height: 3.h),
+  void paint(Canvas canvas, Size size) {
+    if (values.isEmpty) return;
+
+    final gridPaint = Paint()
+      ..color = const Color(0xFFF1E8DE)
+      ..strokeWidth = 1;
+    for (var i = 0; i < 3; i++) {
+      final y = size.height * (i + 1) / 4;
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
+    }
+
+    // 요일 이름이 칸 가운데에 서므로 점도 칸 가운데에 찍어 세로로 맞춘다.
+    // 숫자를 점 위에 올리니 위쪽에 그만큼 자리를 비워 둔다.
+    const labelRoom = 14.0;
+    final step = size.width / values.length;
+    final plotTop = labelRoom;
+    final plotHeight = size.height - labelRoom;
+
+    Offset? at(int i) {
+      final v = values[i];
+      if (v == null) return null;
+      return Offset(
+        step * (i + 0.5),
+        plotTop + plotHeight * (1 - v.clamp(0.0, 1.0)),
+      );
+    }
+
+    final linePaint = Paint()
+      ..color = const Color(0xFFE0A218)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    final fillPaint = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [
+          _yellow.withValues(alpha: 0.2),
+          _yellow.withValues(alpha: 0.02),
         ],
-        FractionallySizedBox(
-          heightFactor: height.clamp(0.12, 1.0),
-          child: Container(
-            decoration: BoxDecoration(
-              color: recorded ? _yellow : const Color(0xFFEDE4DA),
-              borderRadius: BorderRadius.circular(6.r),
-            ),
+      ).createShader(Offset.zero & size);
+
+    // 기록이 이어지는 구간마다 따로 긋는다.
+    var i = 0;
+    while (i < values.length) {
+      if (at(i) == null) {
+        i++;
+        continue;
+      }
+      var last = i;
+      while (last + 1 < values.length && at(last + 1) != null) {
+        last++;
+      }
+      if (last > i) {
+        final run = [for (var k = i; k <= last; k++) at(k)!];
+        final path = Path()..moveTo(run.first.dx, run.first.dy);
+        for (final point in run.skip(1)) {
+          path.lineTo(point.dx, point.dy);
+        }
+        canvas.drawPath(
+          Path.from(path)
+            ..lineTo(run.last.dx, size.height)
+            ..lineTo(run.first.dx, size.height)
+            ..close(),
+          fillPaint,
+        );
+        canvas.drawPath(path, linePaint);
+      }
+      i = last + 1;
+    }
+
+    for (var k = 0; k < values.length; k++) {
+      final point = at(k);
+      if (point == null) continue;
+      canvas.drawCircle(point, 3.6, Paint()..color = Colors.white);
+      canvas.drawCircle(point, 2.6, Paint()..color = const Color(0xFFE0A218));
+
+      final score = days[k].score;
+      if (score == null) continue;
+      final label = TextPainter(
+        text: TextSpan(
+          text: '$score',
+          style: const TextStyle(
+            fontSize: 9,
+            color: _brown,
+            fontWeight: FontWeight.w900,
           ),
         ),
-      ],
-    );
+        textDirection: TextDirection.ltr,
+      )..layout();
+      label.paint(
+        canvas,
+        Offset(point.dx - label.width / 2, point.dy - label.height - 6),
+      );
+    }
   }
+
+  @override
+  bool shouldRepaint(covariant _WeekMoodPainter oldDelegate) =>
+      !listEquals(oldDelegate.values, values);
 }
 
 /// 자주 나온 이야깃거리. 횟수는 서버가 실제로 센 값이라 그대로 보여준다.
@@ -1628,14 +1769,6 @@ TextStyle _sectionTitle() {
   return const TextStyle(
     fontSize: 12,
     color: _dark,
-    fontWeight: FontWeight.w900,
-  );
-}
-
-TextStyle _smallBrown() {
-  return const TextStyle(
-    fontSize: 10,
-    color: _brown,
     fontWeight: FontWeight.w900,
   );
 }

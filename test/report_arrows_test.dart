@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_application_1/7.%20report/daily_report_screen.dart';
+import 'package:flutter_application_1/services/settings_api.dart';
 
 DateTime _d(int m, int day) => DateTime(2026, m, day);
 
@@ -40,5 +41,23 @@ void main() {
   test('날짜를 모르는 예전 리포트에서는 어느 쪽도 못 짚는다', () {
     expect(neighbourReportDay(days, null, older: true), isNull);
     expect(neighbourReportDay(days, null, older: false), isNull);
+  });
+
+  group('요일별 감정 그래프', () {
+    test('점수를 그대로 높이로 쓴다', () {
+      expect(weekMoodValueOf(DayEmotion(weekday: '월', score: 80)), 0.8);
+      expect(weekMoodValueOf(DayEmotion(weekday: '화', score: 0)), 0.0);
+    });
+
+    test('점수가 없으면 감정 종류의 높이로 물러난다', () {
+      final v = weekMoodValueOf(DayEmotion(weekday: '수', emotion: 'happy'));
+      expect(v, isNotNull);
+      expect(v, inInclusiveRange(0.0, 1.0));
+    });
+
+    test('기록이 없는 날은 null 이라 선이 끊긴다', () {
+      // 0 으로 떨어뜨리면 그날 기분이 바닥이었던 것처럼 읽힌다.
+      expect(weekMoodValueOf(DayEmotion(weekday: '목')), isNull);
+    });
   });
 }
