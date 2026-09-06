@@ -1324,8 +1324,9 @@ class _WeekEmotionCard extends StatelessWidget {
   }
 }
 
-/// 한 주의 감정 흐름. 기록이 없는 날은 건너뛰지 않고 선을 끊는다 —
-/// 없는 날을 가로질러 이어 버리면 그날도 그만큼이었던 것처럼 읽힌다.
+/// 한 주의 감정 흐름. 기록이 없는 날은 바닥(0)에 두고 선을 그대로 잇는다.
+/// 점수는 기록이 있는 날에만 얹어서, 바닥이 '0점' 인지 '기록 없음' 인지를
+/// 요일 이름 색과 함께 구분할 수 있게 둔다.
 class _WeekMoodPainter extends CustomPainter {
   const _WeekMoodPainter({required this.values, required this.days});
 
@@ -1352,14 +1353,11 @@ class _WeekMoodPainter extends CustomPainter {
     final plotTop = labelRoom;
     final plotHeight = size.height - labelRoom;
 
-    Offset? at(int i) {
-      final v = values[i];
-      if (v == null) return null;
-      return Offset(
-        step * (i + 0.5),
-        plotTop + plotHeight * (1 - v.clamp(0.0, 1.0)),
-      );
-    }
+    // 기록이 없는 날은 0 으로 본다. 선을 끊지 않아 한 주가 한 줄로 읽힌다.
+    Offset at(int i) => Offset(
+      step * (i + 0.5),
+      plotTop + plotHeight * (1 - (values[i] ?? 0.0).clamp(0.0, 1.0)),
+    );
 
     final linePaint = Paint()
       ..color = const Color(0xFFE0A218)
@@ -1377,40 +1375,34 @@ class _WeekMoodPainter extends CustomPainter {
         ],
       ).createShader(Offset.zero & size);
 
-    // 기록이 이어지는 구간마다 따로 긋는다.
-    var i = 0;
-    while (i < values.length) {
-      if (at(i) == null) {
-        i++;
-        continue;
+    final points = [for (var k = 0; k < values.length; k++) at(k)];
+    if (points.length >= 2) {
+      final path = Path()..moveTo(points.first.dx, points.first.dy);
+      for (final point in points.skip(1)) {
+        path.lineTo(point.dx, point.dy);
       }
-      var last = i;
-      while (last + 1 < values.length && at(last + 1) != null) {
-        last++;
-      }
-      if (last > i) {
-        final run = [for (var k = i; k <= last; k++) at(k)!];
-        final path = Path()..moveTo(run.first.dx, run.first.dy);
-        for (final point in run.skip(1)) {
-          path.lineTo(point.dx, point.dy);
-        }
-        canvas.drawPath(
-          Path.from(path)
-            ..lineTo(run.last.dx, size.height)
-            ..lineTo(run.first.dx, size.height)
-            ..close(),
-          fillPaint,
-        );
-        canvas.drawPath(path, linePaint);
-      }
-      i = last + 1;
+      canvas.drawPath(
+        Path.from(path)
+          ..lineTo(points.last.dx, size.height)
+          ..lineTo(points.first.dx, size.height)
+          ..close(),
+        fillPaint,
+      );
+      canvas.drawPath(path, linePaint);
     }
 
-    for (var k = 0; k < values.length; k++) {
-      final point = at(k);
-      if (point == null) continue;
+    for (var k = 0; k < points.length; k++) {
+      final point = points[k];
+      final recorded = values[k] != null;
       canvas.drawCircle(point, 3.6, Paint()..color = Colors.white);
-      canvas.drawCircle(point, 2.6, Paint()..color = const Color(0xFFE0A218));
+      canvas.drawCircle(
+        point,
+        2.6,
+        Paint()
+          ..color = recorded
+              ? const Color(0xFFE0A218)
+              : const Color(0xFFD8CABE),
+      );
 
       final score = days[k].score;
       if (score == null) continue;

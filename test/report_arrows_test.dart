@@ -55,8 +55,9 @@ void main() {
       expect(v, inInclusiveRange(0.0, 1.0));
     });
 
-    test('기록이 없는 날은 null 이라 선이 끊긴다', () {
-      // 0 으로 떨어뜨리면 그날 기분이 바닥이었던 것처럼 읽힌다.
+    test('기록이 없는 날은 null 이고, 그리는 쪽에서 0 으로 눕힌다', () {
+      // null 을 그대로 두는 것은 점수 표시와 요일 색을 달리하기 위해서다.
+      // 선은 0 으로 이어 한 주가 한 줄로 읽히게 한다.
       expect(weekMoodValueOf(DayEmotion(weekday: '목')), isNull);
     });
   });
