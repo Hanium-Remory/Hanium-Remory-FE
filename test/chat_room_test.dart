@@ -1,16 +1,16 @@
-// 대화방의 '여기까지 읽어드렸어요' 금과 읽음 수.
+// 대화방의 '여기까지 읽어드렸어요' 금과 안 읽은 사람 수.
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_application_1/services/settings_api.dart';
 
-ChatMessage _msg(int id, {bool delivered = false, int readCount = 0}) =>
+ChatMessage _msg(int id, {bool delivered = false, int unreadCount = 0}) =>
     ChatMessage.fromJson({
       'messageId': id,
       'senderType': 'protector',
       'senderId': 1,
       'content': '$id번째',
       'deliveredToDevice': delivered,
-      'readCount': readCount,
+      'unreadCount': unreadCount,
       'createdAt': '2026-09-06T09:00:00+00:00',
     });
 
@@ -49,10 +49,10 @@ List<int> _dayBreaks(List<DateTime?> times) {
 }
 
 void main() {
-  test('전달 여부와 읽음 수를 읽는다', () {
-    final m = _msg(1, delivered: true, readCount: 2);
+  test('전달 여부와 안 읽은 사람 수를 읽는다', () {
+    final m = _msg(1, delivered: true, unreadCount: 2);
     expect(m.deliveredToDevice, isTrue);
-    expect(m.readCount, 2);
+    expect(m.unreadCount, 2);
   });
 
   test('필드를 안 주는 예전 서버와도 맞물린다', () {
@@ -62,7 +62,8 @@ void main() {
       'content': '안녕',
     });
     expect(m.deliveredToDevice, isFalse);
-    expect(m.readCount, 0);
+    // 예전 서버는 세어 주지 않는다. 0 이면 화면에 숫자가 안 뜬다.
+    expect(m.unreadCount, 0);
   });
 
   test('금은 마지막으로 읽어드린 글 바로 뒤에 놓인다', () {
