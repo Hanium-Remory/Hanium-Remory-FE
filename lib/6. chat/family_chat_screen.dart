@@ -215,7 +215,7 @@ class _FamilyChatScreenState extends State<FamilyChatScreen> {
       kind: kind,
       imageUrl: m.imageUrl,
       deliveredToDevice: m.deliveredToDevice,
-      readCount: m.readCount,
+      unreadCount: m.unreadCount,
       at: m.createdAt,
     );
   }
@@ -585,7 +585,7 @@ class _MessageRow extends StatelessWidget {
         sender: message.sender,
         time: message.time,
         mine: message.mine,
-        readCount: message.readCount,
+        unreadCount: message.unreadCount,
         child: _PhotoBubble(imageUrl: message.imageUrl),
       );
     }
@@ -594,7 +594,7 @@ class _MessageRow extends StatelessWidget {
       sender: message.sender,
       time: message.time,
       mine: message.mine,
-      readCount: message.readCount,
+      unreadCount: message.unreadCount,
       child: Text(
         message.text,
         style: TextStyle(
@@ -613,7 +613,7 @@ class _ChatBubbleShell extends StatelessWidget {
     required this.sender,
     required this.time,
     required this.mine,
-    this.readCount = 0,
+    this.unreadCount = 0,
     required this.child,
   });
 
@@ -622,7 +622,7 @@ class _ChatBubbleShell extends StatelessWidget {
   final bool mine;
 
   /// 이 글을 읽은 가족 수. 0 이면 아무것도 그리지 않는다.
-  final int readCount;
+  final int unreadCount;
   final Widget child;
 
   @override
@@ -661,7 +661,7 @@ class _ChatBubbleShell extends StatelessWidget {
               children: [
                 // 내 메시지는 버블 오른쪽에 시간을 따로 그린다. 여기서도 그리면
                 // 같은 시간이 두 번 보인다.
-                if (!mine && (time.isNotEmpty || readCount > 0))
+                if (!mine && (time.isNotEmpty || unreadCount > 0))
                   Padding(
                     padding: const EdgeInsets.only(bottom: 4),
                     child: Row(
@@ -676,10 +676,10 @@ class _ChatBubbleShell extends StatelessWidget {
                               fontWeight: FontWeight.w700,
                             ),
                           ),
-                        if (readCount > 0) ...[
+                        if (unreadCount > 0) ...[
                           const SizedBox(width: 5),
                           Text(
-                            '$readCount',
+                            '\$unreadCount',
                             style: const TextStyle(
                               fontSize: 9,
                               color: _brown,
@@ -694,7 +694,7 @@ class _ChatBubbleShell extends StatelessWidget {
               ],
             ),
           ),
-          if (mine && (time.isNotEmpty || readCount > 0)) ...[
+          if (mine && (time.isNotEmpty || unreadCount > 0)) ...[
             const SizedBox(width: 6),
             Padding(
               padding: const EdgeInsets.only(bottom: 6),
@@ -702,9 +702,9 @@ class _ChatBubbleShell extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.end,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (readCount > 0)
+                  if (unreadCount > 0)
                     Text(
-                      '$readCount',
+                      '\$unreadCount',
                       style: const TextStyle(
                         fontSize: 9,
                         color: _brown,
@@ -1001,7 +1001,7 @@ class _ChatMessage {
     this.kind = _MessageKind.text,
     this.imageUrl,
     this.deliveredToDevice = false,
-    this.readCount = 0,
+    this.unreadCount = 0,
     this.at,
   });
 
@@ -1019,7 +1019,7 @@ class _ChatMessage {
   final bool deliveredToDevice;
 
   /// 이 글을 읽은 가족 수.
-  final int readCount;
+  final int unreadCount;
 
   /// 보낸 시각. 날짜가 바뀌는 자리에 금을 긋는 데 쓴다.
   final DateTime? at;

@@ -1314,7 +1314,7 @@ class ChatMessage {
     this.content,
     this.imageUrl,
     this.deliveredToDevice = false,
-    this.readCount = 0,
+    this.unreadCount = 0,
     this.createdAt,
   });
 
@@ -1325,7 +1325,7 @@ class ChatMessage {
     content: json['content'] as String?,
     imageUrl: json['imageUrl'] as String?,
     deliveredToDevice: json['deliveredToDevice'] == true,
-    readCount: (json['readCount'] as int?) ?? 0,
+    unreadCount: (json['unreadCount'] as int?) ?? 0,
     createdAt: DateTime.tryParse(
       (json['createdAt'] as String?) ?? '',
     )?.toLocal(),
@@ -1344,8 +1344,9 @@ class ChatMessage {
   /// 인형이 어르신께 읽어드렸는지. '여기까지 읽어드렸어요' 를 어디에 놓을지 정한다.
   final bool deliveredToDevice;
 
-  /// 이 글을 읽은 가족 수. 보낸 사람은 세지 않는다.
-  final int readCount;
+  /// 이 글을 아직 안 읽은 가족 수. 카카오톡처럼 남은 사람을 센다.
+  /// 보낸 사람은 빼고, 다 읽으면 0 이라 화면에서 사라진다.
+  final int unreadCount;
   final DateTime? createdAt;
 
   bool get isSystem => senderType == 'system';

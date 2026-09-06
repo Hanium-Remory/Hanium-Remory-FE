@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
@@ -115,30 +116,53 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
     }
   }
 
-  /// 한 칸 이전(delta 1)/이후(delta -1) 리포트로 옮긴다.
-  /// 더 없으면 알려주기만 하고 현재 화면을 유지한다.
-  Future<void> _step(int delta) async {
+  /// 지금 보고 있는 날. 날짜가 없는(예전) 리포트면 null.
+  DateTime? get _currentDay {
+    final d = _report?.reportDate;
+    return d == null ? null : DateTime(d.year, d.month, d.day);
+  }
+
+  /// 리포트가 실제로 있는 날들을 알고 있는지. 서버가 목록을 안 주거나
+  /// 지금 리포트에 날짜가 없으면 예전처럼 offset 으로 물러난다.
+  bool get _knowsDays => _reportDays.isNotEmpty && _currentDay != null;
+
+  /// 지금 보는 날 앞(older)/뒤에서 리포트가 있는 가장 가까운 날.
+  DateTime? _neighbourDay({required bool older}) =>
+      neighbourReportDay(_reportDays, _currentDay, older: older);
+
+  /// 더 예전 리포트가 있는지. 없으면 왼쪽 화살표가 눌리지 않는다.
+  bool get _canGoOlder =>
+      _knowsDays ? _neighbourDay(older: true) != null : true;
+
+  /// 더 뒤 리포트가 있는지. 없으면 오른쪽 화살표가 눌리지 않는다.
+  bool get _canGoNewer =>
+      _knowsDays ? _neighbourDay(older: false) != null : _offset > 0;
+
+  /// 리포트 하나를 받아 화면에 앉힌다. 없으면 안내만 하고 그대로 둔다.
+  Future<void> _swap(
+    Future<DailyReportData?> Function() fetch, {
+    required String emptyMessage,
+    required int offset,
+  }) async {
     final userId = _userId;
     if (userId == null || _stepping) return;
-    final next = _offset + delta;
-    if (next < 0) return;
 
     setState(() => _stepping = true);
     try {
-      final report = await _api.dailyReport(userId, offset: next);
+      final report = await fetch();
       if (!mounted) return;
       if (report == null) {
         setState(() => _stepping = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('더 이전 리포트가 없어요.')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(emptyMessage)));
         return;
       }
       final emotions = await _emotionsFor(userId, report);
       final routine = await _routineFor(userId, report);
       if (!mounted) return;
       setState(() {
-        _offset = next;
+        _offset = offset;
         _report = report;
         _emotions = emotions;
         _routine = routine;
@@ -153,6 +177,34 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
     }
   }
 
+  /// 한 칸 이전(delta 1)/이후(delta -1) 리포트로 옮긴다.
+  /// 더 없으면 알려주기만 하고 현재 화면을 유지한다.
+  Future<void> _step(int delta) async {
+    final userId = _userId;
+    if (userId == null) return;
+
+    // 리포트가 있는 날을 알고 있으면 날짜로 옮긴다. 달력으로 한 번 건너뛰면
+    // 지금이 몇 번째로 최근인지 알 수 없어 offset 은 기준이 되지 못한다.
+    if (_knowsDays) {
+      final day = _neighbourDay(older: delta > 0);
+      if (day == null) return;
+      await _swap(
+        () => _api.dailyReportOn(userId, day),
+        emptyMessage: '그날은 리포트가 없어요.',
+        offset: -1,
+      );
+      return;
+    }
+
+    final next = _offset + delta;
+    if (next < 0) return;
+    await _swap(
+      () => _api.dailyReport(userId, offset: next),
+      emptyMessage: '더 이전 리포트가 없어요.',
+      offset: next,
+    );
+  }
+
   /// 달력을 열어 날짜를 고르고, 고른 날 리포트로 옮긴다.
   Future<void> _pickDate() async {
     final userId = _userId;
@@ -165,36 +217,13 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
     );
     if (picked == null || !mounted) return;
 
-    setState(() => _stepping = true);
-    try {
-      final report = await _api.dailyReportOn(userId, picked);
-      if (!mounted) return;
-      if (report == null) {
-        setState(() => _stepping = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('그날은 리포트가 없어요.')),
-        );
-        return;
-      }
-      final emotions = await _emotionsFor(userId, report);
-      final routine = await _routineFor(userId, report);
-      if (!mounted) return;
-      setState(() {
-        _report = report;
-        _emotions = emotions;
-        _routine = routine;
-        // 날짜로 건너뛰면 '몇 번째로 최근인지' 를 알 수 없다. < > 가 이 자리를
-        // 기준으로 다시 세도록 offset 을 비운 상태로 둔다.
-        _offset = -1;
-        _stepping = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _stepping = false);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('리포트를 불러오지 못했어요: $e')));
-    }
+    // 날짜로 건너뛰면 '몇 번째로 최근인지' 를 알 수 없다. offset 을 비워
+    // 두고, < > 는 리포트가 있는 날 목록을 보고 판단한다.
+    await _swap(
+      () => _api.dailyReportOn(userId, picked),
+      emptyMessage: '그날은 리포트가 없어요.',
+      offset: -1,
+    );
   }
 
   /// 그 리포트가 다루는 날의 감정 기록(오래된 순).
@@ -270,8 +299,10 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
             at: report?.reportDate ?? report?.createdAt,
             onOlder: () => _step(1),
             onNewer: () => _step(-1),
-            canGoNewer: _offset > 0,
-            isLatest: _offset == 0,
+            canGoOlder: _canGoOlder,
+            canGoNewer: _canGoNewer,
+            // 뒤에 볼 리포트가 없으면 그게 가장 최근이다.
+            isLatest: !_canGoNewer,
             onPickDate: _pickDate,
           ),
           SizedBox(height: 10.h),
@@ -466,6 +497,7 @@ class _WeeklyReportScreenState extends State<WeeklyReportScreen> {
             at: report?.createdAt,
             onOlder: () => _step(1),
             onNewer: () => _step(-1),
+            canGoOlder: true,
             canGoNewer: _offset > 0,
             isLatest: _offset == 0,
           ),
@@ -582,6 +614,7 @@ class _WeeklyHeader extends StatelessWidget {
     this.at,
     required this.onOlder,
     required this.onNewer,
+    required this.canGoOlder,
     required this.canGoNewer,
     required this.isLatest,
   });
@@ -592,6 +625,7 @@ class _WeeklyHeader extends StatelessWidget {
   final DateTime? weekStart;
   final DateTime? at;
   final VoidCallback onOlder;
+  final bool canGoOlder;
   final VoidCallback onNewer;
   final bool canGoNewer;
   final bool isLatest;
@@ -613,22 +647,22 @@ class _WeeklyHeader extends StatelessWidget {
       dateText = '';
     }
 
-    return Row(
+    return Column(
       children: [
-        SizedBox(
-          width: _sideWidth,
-          child: IconButton(
-            tooltip: '뒤로 가기',
-            onPressed: () => Navigator.maybePop(context),
-            icon: const Icon(Icons.chevron_left, size: 28, color: _dark),
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
-          ),
-        ),
-        Expanded(
-          child: Column(
-            children: [
-              Text(
+        Row(
+          children: [
+            SizedBox(
+              width: _sideWidth,
+              child: IconButton(
+                tooltip: '뒤로 가기',
+                onPressed: () => Navigator.maybePop(context),
+                icon: const Icon(Icons.chevron_left, size: 28, color: _dark),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+              ),
+            ),
+            Expanded(
+              child: Text(
                 isLatest ? '이번 주 $name님' : '$name님의 주간 리포트',
                 style: const TextStyle(
                   fontSize: 16,
@@ -636,34 +670,43 @@ class _WeeklyHeader extends StatelessWidget {
                   fontWeight: FontWeight.w900,
                 ),
               ),
-              const SizedBox(height: 1),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  _StepArrow(
-                    icon: Icons.chevron_left,
-                    tooltip: '이전 주',
-                    onTap: onOlder,
-                  ),
-                  Text(
-                    dateText,
-                    style: const TextStyle(
-                      fontSize: 9,
-                      color: _muted,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  _StepArrow(
-                    icon: Icons.chevron_right,
-                    tooltip: '다음 주',
-                    onTap: canGoNewer ? onNewer : null,
-                  ),
-                ],
-              ),
-            ],
-          ),
+            ),
+            // 데일리의 '주간' 과 짝. 같은 자리에서 되돌아갈 수 있어야 한다.
+            _ModeLink(
+              label: '일간',
+              icon: Icons.arrow_back,
+              onTap: () => Navigator.maybePop(context),
+            ),
+          ],
         ),
-        const SizedBox(width: _sideWidth),
+        SizedBox(height: 10.h),
+        // 데일리와 같은 날짜 줄. 화살표를 양 끝으로 민다.
+        Row(
+          children: [
+            _StepArrow(
+              icon: Icons.chevron_left,
+              tooltip: '이전 주',
+              onTap: canGoOlder ? onOlder : null,
+            ),
+            Expanded(
+              child: Center(
+                child: Text(
+                  dateText,
+                  style: TextStyle(
+                    fontSize: 13.sp,
+                    color: _muted,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+            _StepArrow(
+              icon: Icons.chevron_right,
+              tooltip: '다음 주',
+              onTap: canGoNewer ? onNewer : null,
+            ),
+          ],
+        ),
       ],
     );
   }
@@ -725,12 +768,35 @@ class _PhoneFrame extends StatelessWidget {
   }
 }
 
+/// [days] 중에서 [current] 보다 앞(older)/뒤에 있는 가장 가까운 날.
+/// 그런 날이 없으면 null — 화살표를 비활성으로 두라는 뜻이다.
+///
+/// 화살표를 offset 으로 세면 달력으로 날짜를 건너뛴 뒤 지금이 몇 번째로
+/// 최근인지 알 수 없어, 뒤에 리포트가 있는데도 오른쪽이 막힌다.
+/// 실제로 리포트가 있는 날 목록을 보고 정한다.
+DateTime? neighbourReportDay(
+  Set<DateTime> days,
+  DateTime? current, {
+  required bool older,
+}) {
+  if (current == null) return null;
+  final cur = DateTime(current.year, current.month, current.day);
+  final side = days
+      .map((d) => DateTime(d.year, d.month, d.day))
+      .where((d) => older ? d.isBefore(cur) : d.isAfter(cur));
+  if (side.isEmpty) return null;
+  return side.reduce(
+    (a, b) => older ? (a.isAfter(b) ? a : b) : (a.isBefore(b) ? a : b),
+  );
+}
+
 class _Header extends StatelessWidget {
   const _Header({
     required this.name,
     this.at,
     required this.onOlder,
     required this.onNewer,
+    required this.canGoOlder,
     required this.canGoNewer,
     required this.isLatest,
     this.onPickDate,
@@ -739,8 +805,9 @@ class _Header extends StatelessWidget {
   final String name;
   final DateTime? at;
 
-  /// 하루 전 리포트로.
+  /// 하루 전 리포트로. 더 예전 것이 없으면 막힌다.
   final VoidCallback onOlder;
+  final bool canGoOlder;
 
   /// 하루 뒤 리포트로. 가장 최근이면 막힌다.
   final VoidCallback onNewer;
@@ -775,26 +842,29 @@ class _Header extends StatelessWidget {
     final day = at ?? DateTime.now();
     final dateText = '${day.month}월 ${day.day}일 (${_weekdays[day.weekday - 1]})';
 
-    return Row(
+    return Column(
       children: [
-        SizedBox(
-          width: _sideWidth,
-          child: IconButton(
-            tooltip: '뒤로 가기',
-            onPressed: () =>
-                Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
-                  MaterialPageRoute(builder: (_) => const MainShell()),
-                  (_) => false,
-                ),
-            icon: const Icon(Icons.chevron_left, size: 28, color: _dark),
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
-          ),
-        ),
-        Expanded(
-          child: Column(
-            children: [
-              Text(
+        Row(
+          children: [
+            SizedBox(
+              width: _sideWidth,
+              child: IconButton(
+                tooltip: '뒤로 가기',
+                onPressed: () =>
+                    Navigator.of(context, rootNavigator: true)
+                        .pushAndRemoveUntil(
+                          MaterialPageRoute(builder: (_) => const MainShell()),
+                          (_) => false,
+                        ),
+                icon: const Icon(Icons.chevron_left, size: 28, color: _dark),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+              ),
+            ),
+            // 제목은 왼쪽에 붙인다. 뒤로 가기 화살표 바로 옆에서 시작해야
+            // 누구의 무슨 리포트인지가 먼저 읽힌다.
+            Expanded(
+              child: Text(
                 isLatest ? '오늘의 $name님' : '$name님의 리포트',
                 style: const TextStyle(
                   fontSize: 16,
@@ -802,77 +872,123 @@ class _Header extends StatelessWidget {
                   fontWeight: FontWeight.w900,
                 ),
               ),
-              SizedBox(height: 6.h),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  _StepArrow(
-                    icon: Icons.chevron_left,
-                    tooltip: '이전 리포트',
-                    onTap: onOlder,
-                  ),
-                  // 눌러서 달력을 연다. 며칠 전인지를 크게, 날짜를 작게 둔다 —
-                  // 대부분은 '오늘' 인지만 알면 되고, 정확한 날짜는 그다음이다.
-                  Flexible(
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: onPickDate,
-                      child: Padding(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: 8.w,
-                          vertical: 2.h,
-                        ),
-                        child: Column(
-                          children: [
-                            Text(
-                              _relativeLabel(day),
-                              style: TextStyle(
-                                fontSize: 15.sp,
-                                color: _dark,
-                                fontWeight: FontWeight.w900,
-                              ),
-                            ),
-                            SizedBox(height: 1.h),
-                            Text(
-                              dateText,
-                              style: TextStyle(
-                                fontSize: 10.sp,
-                                color: _muted,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ],
+            ),
+            _ModeLink(
+              label: '주간',
+              icon: Icons.arrow_forward,
+              trailing: true,
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const WeeklyReportScreen()),
+              ),
+            ),
+          ],
+        ),
+        SizedBox(height: 10.h),
+        // 날짜 줄. 화살표를 양 끝으로 밀어 두면 누르기 쉽고, 가운데 날짜가
+        // 화면 중앙에 온다.
+        Row(
+          children: [
+            _StepArrow(
+              icon: Icons.chevron_left,
+              tooltip: '이전 리포트',
+              onTap: canGoOlder ? onOlder : null,
+            ),
+            // 눌러서 달력을 연다. 며칠 전인지를 크게, 날짜를 작게 둔다 —
+            // 대부분은 '오늘' 인지만 알면 되고, 정확한 날짜는 그다음이다.
+            Expanded(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: onPickDate,
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 8.w, vertical: 2.h),
+                  child: Column(
+                    children: [
+                      Text(
+                        _relativeLabel(day),
+                        style: TextStyle(
+                          fontSize: 19.sp,
+                          color: _dark,
+                          fontWeight: FontWeight.w900,
                         ),
                       ),
-                    ),
+                      SizedBox(height: 2.h),
+                      Text(
+                        dateText,
+                        style: TextStyle(
+                          fontSize: 12.sp,
+                          color: _muted,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
                   ),
-                  _StepArrow(
-                    icon: Icons.chevron_right,
-                    tooltip: '다음 리포트',
-                    onTap: canGoNewer ? onNewer : null,
-                  ),
-                ],
+                ),
               ),
-            ],
-          ),
-        ),
-        SizedBox(
-          width: _sideWidth,
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const WeeklyReportScreen()),
             ),
-            child: Center(child: Text('주간', style: _smallBrown())),
-          ),
+            _StepArrow(
+              icon: Icons.chevron_right,
+              tooltip: '다음 리포트',
+              onTap: canGoNewer ? onNewer : null,
+            ),
+          ],
         ),
       ],
     );
   }
 }
 
-/// 날짜를 한 칸씩 옮기는 작은 화살표. onTap 이 null 이면 흐리게 보인다.
+/// 데일리 ↔ 주간 을 오가는 링크. 글자만 놓아 두면 글자 높이만큼밖에
+/// 눌리지 않아서, 누르는 칸을 손가락에 맞게 따로 넓혀 둔다.
+class _ModeLink extends StatelessWidget {
+  const _ModeLink({
+    required this.label,
+    required this.icon,
+    required this.onTap,
+    this.trailing = false,
+  });
+
+  final String label;
+  final IconData icon;
+
+  /// 화살표를 글자 뒤에 둘지. 주간으로 '나가는' 쪽만 뒤에 둔다.
+  final bool trailing;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final arrow = Icon(icon, size: 13, color: _brown);
+    final text = Text(
+      label,
+      style: const TextStyle(
+        fontSize: 12,
+        color: _brown,
+        fontWeight: FontWeight.w900,
+      ),
+    );
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: onTap,
+        child: Container(
+          height: 44,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          alignment: Alignment.center,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: trailing
+                ? [text, const SizedBox(width: 3), arrow]
+                : [arrow, const SizedBox(width: 3), text],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 날짜를 한 칸씩 옮기는 화살표. 날짜 줄 양 끝에 서는 둥근 사각 버튼이다.
+/// onTap 이 null 이면 눌리지 않고, 테두리만 남은 것처럼 흐려진다.
 class _StepArrow extends StatelessWidget {
   const _StepArrow({
     required this.icon,
@@ -884,15 +1000,33 @@ class _StepArrow extends StatelessWidget {
   final String tooltip;
   final VoidCallback? onTap;
 
+  /// 손가락으로 누를 수 있는 크기. 좌우 여백 계산에도 쓰인다.
+  static const double size = 38;
+  static const double _radius = 11;
+
   @override
   Widget build(BuildContext context) {
-    return IconButton(
-      tooltip: tooltip,
-      onPressed: onTap,
-      icon: Icon(icon, size: 18, color: onTap == null ? _line : _muted),
-      padding: EdgeInsets.zero,
-      constraints: const BoxConstraints(minWidth: 28, minHeight: 24),
-      visualDensity: VisualDensity.compact,
+    final on = onTap != null;
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: on ? Colors.white : _bg,
+        borderRadius: BorderRadius.circular(_radius),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(_radius),
+          onTap: onTap,
+          child: Container(
+            width: size,
+            height: size,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(_radius),
+              border: Border.all(color: _line, width: 1),
+            ),
+            child: Icon(icon, size: 22, color: on ? _dark : _line),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -1136,6 +1270,17 @@ class _SpokenLine extends StatelessWidget {
 /// 여기는 읽어 내려가는 글이라 글자를 작게 두고 줄 간격을 넉넉히 준다.
 /// 요일별 감정. 일곱 칸을 늘 그린다 — 기록이 없는 날은 옅은 막대로 두어
 /// 그날이 빠졌다는 것 자체가 보이게 한다.
+/// 그 날 그래프의 높이(0~1). 기록이 없으면 null 이라 점도 선도 그리지 않는다.
+/// 점수가 있으면 점수를 쓰고, 없으면 감정 종류의 높이로 물러난다 —
+/// 홈·데일리 그래프와 같은 기준이라 세 화면이 같은 하루를 다르게 보이지 않는다.
+double? weekMoodValueOf(DayEmotion day) {
+  final score = day.score;
+  if (score != null) return (score / 100).clamp(0.0, 1.0);
+  if (day.emotion != null) return emotionHeightOf(day.emotion);
+  return null;
+}
+
+/// 요일별 감정. 점수를 선으로 이어 한 주가 어떻게 흘렀는지 보이게 한다.
 class _WeekEmotionCard extends StatelessWidget {
   const _WeekEmotionCard({required this.days});
 
@@ -1143,36 +1288,34 @@ class _WeekEmotionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final values = [for (final day in days) weekMoodValueOf(day)];
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
       decoration: _cardDecoration(),
       child: Column(
         children: [
           SizedBox(
-            height: 76.h,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                for (var i = 0; i < days.length; i++) ...[
-                  if (i > 0) SizedBox(width: 6.w),
-                  Expanded(child: _EmotionBar(day: days[i])),
-                ],
-              ],
+            height: 88.h,
+            child: CustomPaint(
+              painter: _WeekMoodPainter(values: values, days: days),
+              child: const SizedBox.expand(),
             ),
           ),
           SizedBox(height: 6.h),
           Row(
             children: [
-              for (var i = 0; i < days.length; i++) ...[
-                if (i > 0) SizedBox(width: 6.w),
+              for (var i = 0; i < days.length; i++)
                 Expanded(
                   child: Text(
                     days[i].weekday,
                     textAlign: TextAlign.center,
-                    style: _tiny(color: _muted),
+                    style: _tiny(
+                      color: values[i] == null
+                          ? const Color(0xFFC7B8AE)
+                          : _muted,
+                    ),
                   ),
                 ),
-              ],
             ],
           ),
         ],
@@ -1181,36 +1324,109 @@ class _WeekEmotionCard extends StatelessWidget {
   }
 }
 
-class _EmotionBar extends StatelessWidget {
-  const _EmotionBar({required this.day});
+/// 한 주의 감정 흐름. 기록이 없는 날은 바닥(0)에 두고 선을 그대로 잇는다.
+/// 점수는 기록이 있는 날에만 얹어서, 바닥이 '0점' 인지 '기록 없음' 인지를
+/// 요일 이름 색과 함께 구분할 수 있게 둔다.
+class _WeekMoodPainter extends CustomPainter {
+  const _WeekMoodPainter({required this.values, required this.days});
 
-  final DayEmotion day;
+  /// 0(바닥)~1(천장). 기록이 없는 날은 null.
+  final List<double?> values;
+  final List<DayEmotion> days;
 
   @override
-  Widget build(BuildContext context) {
-    final recorded = day.emotion != null;
-    // 감정 높이는 홈·데일리 그래프와 같은 기준을 쓴다. 세 화면이 같은 하루를
-    // 다르게 보여주면 안 된다.
-    final height = recorded ? emotionHeightOf(day.emotion) : 0.12;
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.end,
-      children: [
-        if (recorded && day.score != null) ...[
-          Text('${day.score}', style: _tiny(color: _brown)),
-          SizedBox(height: 3.h),
+  void paint(Canvas canvas, Size size) {
+    if (values.isEmpty) return;
+
+    final gridPaint = Paint()
+      ..color = const Color(0xFFF1E8DE)
+      ..strokeWidth = 1;
+    for (var i = 0; i < 3; i++) {
+      final y = size.height * (i + 1) / 4;
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
+    }
+
+    // 요일 이름이 칸 가운데에 서므로 점도 칸 가운데에 찍어 세로로 맞춘다.
+    // 숫자를 점 위에 올리니 위쪽에 그만큼 자리를 비워 둔다.
+    const labelRoom = 14.0;
+    final step = size.width / values.length;
+    final plotTop = labelRoom;
+    final plotHeight = size.height - labelRoom;
+
+    // 기록이 없는 날은 0 으로 본다. 선을 끊지 않아 한 주가 한 줄로 읽힌다.
+    Offset at(int i) => Offset(
+      step * (i + 0.5),
+      plotTop + plotHeight * (1 - (values[i] ?? 0.0).clamp(0.0, 1.0)),
+    );
+
+    final linePaint = Paint()
+      ..color = const Color(0xFFE0A218)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    final fillPaint = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [
+          _yellow.withValues(alpha: 0.2),
+          _yellow.withValues(alpha: 0.02),
         ],
-        FractionallySizedBox(
-          heightFactor: height.clamp(0.12, 1.0),
-          child: Container(
-            decoration: BoxDecoration(
-              color: recorded ? _yellow : const Color(0xFFEDE4DA),
-              borderRadius: BorderRadius.circular(6.r),
-            ),
+      ).createShader(Offset.zero & size);
+
+    final points = [for (var k = 0; k < values.length; k++) at(k)];
+    if (points.length >= 2) {
+      final path = Path()..moveTo(points.first.dx, points.first.dy);
+      for (final point in points.skip(1)) {
+        path.lineTo(point.dx, point.dy);
+      }
+      canvas.drawPath(
+        Path.from(path)
+          ..lineTo(points.last.dx, size.height)
+          ..lineTo(points.first.dx, size.height)
+          ..close(),
+        fillPaint,
+      );
+      canvas.drawPath(path, linePaint);
+    }
+
+    for (var k = 0; k < points.length; k++) {
+      final point = points[k];
+      final recorded = values[k] != null;
+      canvas.drawCircle(point, 3.6, Paint()..color = Colors.white);
+      canvas.drawCircle(
+        point,
+        2.6,
+        Paint()
+          ..color = recorded
+              ? const Color(0xFFE0A218)
+              : const Color(0xFFD8CABE),
+      );
+
+      final score = days[k].score;
+      if (score == null) continue;
+      final label = TextPainter(
+        text: TextSpan(
+          text: '$score',
+          style: const TextStyle(
+            fontSize: 9,
+            color: _brown,
+            fontWeight: FontWeight.w900,
           ),
         ),
-      ],
-    );
+        textDirection: TextDirection.ltr,
+      )..layout();
+      label.paint(
+        canvas,
+        Offset(point.dx - label.width / 2, point.dy - label.height - 6),
+      );
+    }
   }
+
+  @override
+  bool shouldRepaint(covariant _WeekMoodPainter oldDelegate) =>
+      !listEquals(oldDelegate.values, values);
 }
 
 /// 자주 나온 이야깃거리. 횟수는 서버가 실제로 센 값이라 그대로 보여준다.
@@ -1545,14 +1761,6 @@ TextStyle _sectionTitle() {
   return const TextStyle(
     fontSize: 12,
     color: _dark,
-    fontWeight: FontWeight.w900,
-  );
-}
-
-TextStyle _smallBrown() {
-  return const TextStyle(
-    fontSize: 10,
-    color: _brown,
     fontWeight: FontWeight.w900,
   );
 }
