@@ -35,7 +35,8 @@ typedef MemorySubmit =
 
 class _MemoryAddFlowState extends State<MemoryAddFlow> {
   final SettingsApi _api = SettingsApi();
-  bool _showMemoryForm = false;
+  /// 들어오면 '새 추억' 부터 보여준다. 사진과 이야기를 올리는 쪽을 훨씬 자주 쓴다.
+  bool _showMemoryForm = true;
   bool _saved = false;
   bool _savedAsNewMemory = true;
 
@@ -107,7 +108,7 @@ class _MemoryAddFlowState extends State<MemoryAddFlow> {
     setState(() => _showMemoryForm = true);
   }
 
-  void _backToChoice() {
+  void _openNewMemoryForm() {
     setState(() => _showMemoryForm = false);
   }
 
@@ -130,7 +131,7 @@ class _MemoryAddFlowState extends State<MemoryAddFlow> {
       return MemoryAddScreen(
         onSave: _saveMemory,
         elderName: _elder?.name,
-        onBack: _backToChoice,
+        onSelectNewMemory: _openNewMemoryForm,
       );
     }
     return MemoryTypeScreen(
@@ -139,6 +140,10 @@ class _MemoryAddFlowState extends State<MemoryAddFlow> {
     );
   }
 }
+
+/// 헤더와 본문 사이 여백. 두 화면이 칩으로 오가는 짝이라 반드시 같아야 한다 —
+/// 다르면 '추가하고 싶은 부분을 선택해주세요' 가 전환할 때마다 위아래로 흔들린다.
+final double _headerGap = 14.h;
 
 class MemoryTypeScreen extends StatelessWidget {
   const MemoryTypeScreen({
@@ -160,8 +165,8 @@ class MemoryTypeScreen extends StatelessWidget {
           child: Column(
             children: [
               SizedBox(height: 10.h),
-              _Header(title: '새 기억', actionText: '저장', onAction: onSave),
-              SizedBox(height: 18.h),
+              _Header(title: '기억 추가', actionText: '저장', onAction: onSave),
+              SizedBox(height: _headerGap),
               Expanded(
                 child: SingleChildScrollView(
                   physics: const BouncingScrollPhysics(),
@@ -239,12 +244,13 @@ class MemoryAddScreen extends StatefulWidget {
   const MemoryAddScreen({
     super.key,
     required this.onSave,
-    required this.onBack,
+    required this.onSelectNewMemory,
     this.elderName,
   });
 
   final MemorySubmit onSave;
-  final VoidCallback onBack;
+  /// '새 기억' 칩을 눌렀을 때. 두 화면은 칩으로 오가는 짝이다.
+  final VoidCallback onSelectNewMemory;
 
   /// 연결된 어르신 이름. 아직 못 받았으면 null.
   final String? elderName;
@@ -330,12 +336,11 @@ class _MemoryAddScreenState extends State<MemoryAddScreen> {
             children: [
               SizedBox(height: 10.h),
               _Header(
-                title: '새 추억',
+                title: '기억 추가',
                 actionText: _busy ? '저장 중…' : '저장',
                 onAction: _busy ? null : _submit,
-                onBack: widget.onBack,
               ),
-              SizedBox(height: 14.h),
+              SizedBox(height: _headerGap),
               Expanded(
                 child: SingleChildScrollView(
                   physics: const BouncingScrollPhysics(),
@@ -349,7 +354,7 @@ class _MemoryAddScreenState extends State<MemoryAddScreen> {
                             child: _ChipButton(
                               text: '새 기억',
                               selected: false,
-                              onTap: widget.onBack,
+                              onTap: widget.onSelectNewMemory,
                             ),
                           ),
                           SizedBox(width: 8.w),
@@ -377,16 +382,22 @@ class _MemoryAddScreenState extends State<MemoryAddScreen> {
                       SizedBox(height: 18.h),
                       _Label('언제 기억인가요'),
                       SizedBox(height: 8.h),
-                      Wrap(
-                        spacing: 8.w,
-                        runSpacing: 8.h,
-                        children: List.generate(_whenOptions.length, (index) {
-                          return _ChipButton(
-                            text: _whenOptions[index],
-                            selected: _selectedWhen == index,
-                            onTap: () => setState(() => _selectedWhen = index),
-                          );
-                        }),
+                      // 넷이 한 줄에 나란히 서게 폭을 나눠 갖는다. Wrap 으로 두면
+                      // 좁은 화면에서 두 줄로 접혀 위아래로 늘어져 보였다.
+                      Row(
+                        children: [
+                          for (var i = 0; i < _whenOptions.length; i++) ...[
+                            if (i > 0) SizedBox(width: 6.w),
+                            Expanded(
+                              child: _ChipButton(
+                                text: _whenOptions[i],
+                                selected: _selectedWhen == i,
+                                onTap: () => setState(() => _selectedWhen = i),
+                                fill: true,
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
                       SizedBox(height: 18.h),
                       _Label(
@@ -720,11 +731,16 @@ class _ChipButton extends StatelessWidget {
     required this.text,
     required this.selected,
     required this.onTap,
+    this.fill = false,
   });
 
   final String text;
   final bool selected;
   final VoidCallback onTap;
+
+  /// 주어진 폭을 채워야 하는 칩(Expanded 안). 여백을 줄이고, 그래도 모자라면
+  /// 글자를 줄여서 넣는다 — '오래된 기억' 같은 긴 말이 잘리지 않게.
+  final bool fill;
 
   @override
   Widget build(BuildContext context) {
@@ -732,19 +748,23 @@ class _ChipButton extends StatelessWidget {
       onTap: onTap,
       child: Container(
         height: 34.h,
-        padding: EdgeInsets.symmetric(horizontal: 16.w),
+        padding: EdgeInsets.symmetric(horizontal: fill ? 6.w : 16.w),
         alignment: Alignment.center,
         decoration: BoxDecoration(
           color: selected ? _brown : Colors.white,
           borderRadius: BorderRadius.circular(99.r),
           border: Border.all(color: selected ? _brown : _line),
         ),
-        child: Text(
-          text,
-          style: TextStyle(
-            fontSize: 12.sp,
-            color: selected ? Colors.white : _dark,
-            fontWeight: FontWeight.w800,
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            text,
+            maxLines: 1,
+            style: TextStyle(
+              fontSize: 12.sp,
+              color: selected ? Colors.white : _dark,
+              fontWeight: FontWeight.w800,
+            ),
           ),
         ),
       ),
