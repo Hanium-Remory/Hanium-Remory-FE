@@ -199,7 +199,7 @@ class MemoryTypeScreen extends StatelessWidget {
                         ],
                       ),
                       SizedBox(height: 10.h),
-                      const _TypeGuide(),
+                      const _TypeGuide(isMemory: false),
                       SizedBox(height: 18.h),
                       TextField(
                         minLines: 12,
@@ -380,7 +380,7 @@ class _MemoryAddScreenState extends State<MemoryAddScreen> {
                         ],
                       ),
                       SizedBox(height: 10.h),
-                      const _TypeGuide(),
+                      const _TypeGuide(isMemory: true),
                       SizedBox(height: 18.h),
                       _PhotoUploadBox(
                         imageBytes: _selectedPhoto,
@@ -740,65 +740,33 @@ class _TextFieldBox extends StatelessWidget {
   }
 }
 
-/// 새 추억과 새 기억이 무엇이 다른지. 두 화면이 같은 위젯을 써야
-/// 칩으로 오갈 때 아래 내용이 밀리지 않는다.
+/// 지금 고른 쪽이 무엇을 적는 자리인지 한 줄로 알려준다.
+///
+/// 둘을 한꺼번에 늘어놓으면 읽을 것이 많아지고, 정작 지금 쓰는 칸과 무슨
+/// 상관인지가 흐려진다. 고른 쪽만 보여준다.
 class _TypeGuide extends StatelessWidget {
-  const _TypeGuide();
+  const _TypeGuide({required this.isMemory});
+
+  /// true 면 새 추억, false 면 새 기억.
+  final bool isMemory;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _TypeGuideLine(
-          term: '새 추억',
-          body: '가족과 함께한 지난 일. 사진과 함께 그날 이야기를 남겨요.',
+    // 두 문구의 길이가 달라 줄 수가 바뀔 수 있다. 높이를 잡아 두지 않으면
+    // 칩을 누를 때마다 아래 입력칸이 위아래로 흔들린다.
+    return SizedBox(
+      height: 36.h,
+      child: Text(
+        isMemory
+            ? '가족과 함께한 지난 일. 사진과 함께 그날 이야기를 남겨요.'
+            : '가족이 누구인지, 좋아하시는 음식·노래처럼 알아두면 좋을 것들.',
+        style: TextStyle(
+          fontSize: 11.sp,
+          height: 1.5,
+          color: const Color(0xFF8A7A6D),
+          fontWeight: FontWeight.w600,
         ),
-        SizedBox(height: 4.h),
-        _TypeGuideLine(
-          term: '새 기억',
-          body: '가족이 누구인지, 좋아하시는 음식·노래처럼 알아두면 좋을 것들.',
-        ),
-      ],
-    );
-  }
-}
-
-class _TypeGuideLine extends StatelessWidget {
-  const _TypeGuideLine({required this.term, required this.body});
-
-  final String term;
-  final String body;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          width: 44.w,
-          child: Text(
-            term,
-            style: TextStyle(
-              fontSize: 11.sp,
-              height: 1.5,
-              color: _brown,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-        ),
-        Expanded(
-          child: Text(
-            body,
-            style: TextStyle(
-              fontSize: 11.sp,
-              height: 1.5,
-              color: const Color(0xFF8A7A6D),
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
-      ],
+      ),
     );
   }
 }
