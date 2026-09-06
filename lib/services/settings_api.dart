@@ -1123,6 +1123,7 @@ class WeeklyReportData {
     this.dominantEmotion,
     required this.emergencyAlertCount,
     this.weeklySummary,
+    this.weekStory,
     this.createdAt,
   });
 
@@ -1138,6 +1139,7 @@ class WeeklyReportData {
         dominantEmotion: json['dominantEmotion'] as String?,
         emergencyAlertCount: (json['emergencyAlertCount'] as int?) ?? 0,
         weeklySummary: json['weeklySummary'] as String?,
+        weekStory: json['weekStory'] as String?,
         createdAt: DateTime.tryParse(
           (json['createdAt'] as String?) ?? '',
         )?.toLocal(),
@@ -1154,6 +1156,10 @@ class WeeklyReportData {
   final String? dominantEmotion;
   final int emergencyAlertCount;
   final String? weeklySummary;
+
+  /// 한 주가 어떻게 흘렀는지 풀어 쓴 한 문단. weeklySummary 는 맨 위에 걸리는
+  /// 머리말이고, 이쪽은 아래에서 한 주를 돌아본다.
+  final String? weekStory;
   final DateTime? createdAt;
 }
 

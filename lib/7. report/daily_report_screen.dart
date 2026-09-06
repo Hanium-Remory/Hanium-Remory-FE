@@ -491,6 +491,12 @@ class _WeeklyReportScreenState extends State<WeeklyReportScreen> {
                           ],
                         ),
                       ),
+                      if ((report.weekStory ?? '').isNotEmpty) ...[
+                        SizedBox(height: 14.h),
+                        Text('한 주를 돌아보면', style: _sectionTitle()),
+                        SizedBox(height: 8.h),
+                        _DayStoryCard(text: report.weekStory!),
+                      ],
                     ],
                   ),
           ),
