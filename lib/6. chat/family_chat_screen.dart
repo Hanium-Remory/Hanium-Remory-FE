@@ -608,6 +608,10 @@ class _MessageRow extends StatelessWidget {
   }
 }
 
+/// 버블 옆에 붙는 '안 읽은 사람 수'. 0 이면 빈 글자라 아무것도 안 보인다.
+String unreadBadgeText(int unreadCount) =>
+    unreadCount > 0 ? '$unreadCount' : '';
+
 class _ChatBubbleShell extends StatelessWidget {
   const _ChatBubbleShell({
     required this.sender,
@@ -621,7 +625,7 @@ class _ChatBubbleShell extends StatelessWidget {
   final String time;
   final bool mine;
 
-  /// 이 글을 읽은 가족 수. 0 이면 아무것도 그리지 않는다.
+  /// 이 글을 아직 안 읽은 가족 수. 0 이면 아무것도 그리지 않는다.
   final int unreadCount;
   final Widget child;
 
@@ -679,7 +683,7 @@ class _ChatBubbleShell extends StatelessWidget {
                         if (unreadCount > 0) ...[
                           const SizedBox(width: 5),
                           Text(
-                            '\$unreadCount',
+                            unreadBadgeText(unreadCount),
                             style: const TextStyle(
                               fontSize: 9,
                               color: _brown,
@@ -704,7 +708,7 @@ class _ChatBubbleShell extends StatelessWidget {
                 children: [
                   if (unreadCount > 0)
                     Text(
-                      '\$unreadCount',
+                      unreadBadgeText(unreadCount),
                       style: const TextStyle(
                         fontSize: 9,
                         color: _brown,

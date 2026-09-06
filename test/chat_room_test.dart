@@ -1,6 +1,7 @@
 // 대화방의 '여기까지 읽어드렸어요' 금과 안 읽은 사람 수.
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_application_1/6.%20chat/family_chat_screen.dart';
 import 'package:flutter_application_1/services/settings_api.dart';
 
 ChatMessage _msg(int id, {bool delivered = false, int unreadCount = 0}) =>
@@ -127,5 +128,15 @@ void main() {
     test('메시지가 없으면 금도 없다', () {
       expect(_dayBreaks([]), isEmpty);
     });
+  });
+
+  test('숫자를 글자로 만들어 붙인다', () {
+    // 한번 '\$unreadCount' 로 이스케이프돼서 변수 이름이 그대로 떴다.
+    expect(unreadBadgeText(3), '3');
+    expect(unreadBadgeText(1), '1');
+  });
+
+  test('다 읽었으면 아무것도 안 붙는다', () {
+    expect(unreadBadgeText(0), '');
   });
 }
