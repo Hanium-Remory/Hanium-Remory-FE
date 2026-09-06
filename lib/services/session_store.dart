@@ -25,6 +25,11 @@ class SessionStore {
   static String elderGender = 'female';
   static String get elderHonorific => elderGender == 'male' ? '아버님' : '어머님';
 
+  /// 세션 만료(재발급 실패)로 로그인 화면으로 되돌리는 처리가 이미 한 번
+  /// 실행됐는지. 여러 요청이 동시에 401 을 받아도 화면을 한 번만 옮기려는
+  /// 플래그다. 로그인·재발급이 성공하면 다시 false 로 돌린다.
+  static bool expiredHandled = false;
+
   static Future<void> initialize() async {
     final p = await SharedPreferences.getInstance();
     elderGender = p.getString(_kElderGender) ?? 'female';
@@ -46,6 +51,7 @@ class SessionStore {
     await p.setString(_kAccess, accessToken);
     await p.setString(_kRefresh, refreshToken);
     await p.setInt(_kProtectorId, protectorId);
+    expiredHandled = false; // 새로 로그인했으니 다음 만료를 다시 잡게 한다.
   }
 
   /// 저장된 세션 상태. refresh 토큰의 exp 를 직접 보므로 서버가 필요 없다.
@@ -94,6 +100,7 @@ class SessionStore {
     final p = await SharedPreferences.getInstance();
     await p.setString(_kAccess, accessToken);
     await p.setString(_kRefresh, refreshToken);
+    expiredHandled = false; // 재발급 성공. 다음 만료를 다시 잡게 한다.
   }
 
   static Future<String?> accessToken() async {
