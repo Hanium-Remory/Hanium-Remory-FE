@@ -529,6 +529,26 @@ class SettingsApi {
     return DailyReportData.fromJson(d as Map<String, dynamic>);
   }
 
+  /// 그날 리포트. 달력에서 고른 날은 '몇 번째로 최근인지' 를 알 수 없어
+  /// 날짜로 묻는다. 그날 것이 없으면 null 이다.
+  Future<DailyReportData?> dailyReportOn(int userId, DateTime day) async {
+    final d = await _send(
+      'GET',
+      '/users/$userId/reports/daily?date=${_ymd(day)}',
+    );
+    if (d == null) return null;
+    return DailyReportData.fromJson(d as Map<String, dynamic>);
+  }
+
+  /// 리포트가 있는 날들. 달력이 어느 날에 점을 찍을지 정하는 데 쓴다.
+  Future<Set<DateTime>> dailyReportDates(int userId) async {
+    final d = await _send('GET', '/users/$userId/reports/daily/dates');
+    return {
+      for (final s in (d as List?) ?? [])
+        if (DateTime.tryParse(s as String) != null) DateTime.parse(s),
+    };
+  }
+
   /// 주간 리포트. [offset] 0 이 가장 최근, 1 이 그 전주치다.
   Future<WeeklyReportData?> weeklyReport(int userId, {int offset = 0}) async {
     final d = await _send(
