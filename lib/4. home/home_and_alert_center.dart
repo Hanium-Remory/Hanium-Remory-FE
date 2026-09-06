@@ -41,6 +41,37 @@ String _emotionLabelOf(String? emotion) =>
 /// 감정 코드 → 그래프 높이. 리포트 화면도 같은 기준을 써야 해서 공개한다.
 double emotionHeightOf(String? emotion) => _emotionHeights[emotion] ?? 0.5;
 
+/// 활동 코드 → 아이콘·배경색. 모르는 코드는 기본값으로 보여준다.
+/// 홈 타임라인과 리포트의 '일과' 가 같은 규칙을 써야 해서 공개한다.
+({IconData icon, Color tint}) activityStyleOf(String type) {
+  final t = type.toUpperCase();
+  if (t.contains('CONVERSATION') || t.contains('CHAT')) {
+    return (icon: Icons.chat_bubble_outline, tint: const Color(0xFFE7F6D8));
+  }
+  if (t.contains('MEDICATION')) {
+    return (icon: Icons.medication_outlined, tint: const Color(0xFFFFE8C9));
+  }
+  if (t.contains('VOICE')) {
+    return (icon: Icons.mic_none, tint: const Color(0xFFF6E6D6));
+  }
+  return (icon: Icons.schedule, tint: const Color(0xFFFFF3C8));
+}
+
+/// 활동 코드 → 보호자에게 보여줄 한 줄.
+String activityTitleOf(String type) {
+  switch (type.toUpperCase()) {
+    case 'DAILY_CONVERSATION':
+      return '인형과 대화했어요';
+    case 'MEDICATION':
+      return '약 복용 시간이었어요';
+    case 'VOICE_PLAY':
+      return '가족 목소리를 들으셨어요';
+    default:
+      // 모르는 코드는 감추지 말고 그대로 보여준다.
+      return type;
+  }
+}
+
 class HomeAndAlertPreview extends StatefulWidget {
   const HomeAndAlertPreview({super.key});
 
@@ -160,35 +191,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       // 무시 — 다음 주기에 다시 시도한다.
     } finally {
       _refreshing = false;
-    }
-  }
-
-  /// 활동 코드에 맞는 아이콘·배경색. 모르는 코드는 기본값으로 보여준다.
-  ({IconData icon, Color tint}) _activityStyle(String type) {
-    final t = type.toUpperCase();
-    if (t.contains('CONVERSATION') || t.contains('CHAT')) {
-      return (icon: Icons.chat_bubble_outline, tint: const Color(0xFFE7F6D8));
-    }
-    if (t.contains('MEDICATION')) {
-      return (icon: Icons.medication_outlined, tint: const Color(0xFFFFE8C9));
-    }
-    if (t.contains('VOICE')) {
-      return (icon: Icons.mic_none, tint: const Color(0xFFF6E6D6));
-    }
-    return (icon: Icons.schedule, tint: const Color(0xFFFFF3C8));
-  }
-
-  String _activityTitle(ActivityItem a) {
-    switch (a.activityType.toUpperCase()) {
-      case 'DAILY_CONVERSATION':
-        return '인형과 대화했어요';
-      case 'MEDICATION':
-        return '약 복용 시간이었어요';
-      case 'VOICE_PLAY':
-        return '가족 목소리를 들으셨어요';
-      default:
-        // 모르는 코드는 감추지 말고 그대로 보여준다.
-        return a.activityType;
     }
   }
 
@@ -337,11 +339,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   else
                     for (final activity in summary.activities)
                       _TimelineItem(
-                        icon: _activityStyle(activity.activityType).icon,
-                        title: _activityTitle(activity),
+                        icon: activityStyleOf(activity.activityType).icon,
+                        title: activityTitleOf(activity.activityType),
                         subtitle: activity.content ?? '',
                         time: _timelineTime(activity.createdAt),
-                        tint: _activityStyle(activity.activityType).tint,
+                        tint: activityStyleOf(activity.activityType).tint,
                       ),
                   SizedBox(height: 10.h),
                 ],

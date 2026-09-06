@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
-import '../4. home/home_and_alert_center.dart' show emotionHeightOf;
+import '../4. home/home_and_alert_center.dart'
+    show activityStyleOf, activityTitleOf, emotionHeightOf;
 import '../main_shell.dart';
 import '../services/settings_api.dart';
 
@@ -11,7 +12,35 @@ const Color _dark = Color(0xFF2F2521);
 const Color _muted = Color(0xFF7C6B61);
 const Color _line = Color(0xFFE8DCD2);
 const Color _yellow = Color(0xFFF6C43D);
-const Color _green = Color(0xFF5D9E41);
+
+/// 감정 그래프 아래 한 줄. 짚어 줄 것이 없으면 null 이라 칸 자체가 빠진다.
+///
+/// [emotions] 는 그 날 감정 기록을 오래된 순으로 늘어놓은 것이다.
+String? moodCaptionOf(int conversationCount, List<EmotionPoint> emotions) {
+  if (emotions.isEmpty) return null;
+
+  // 감정은 표정으로도 읽히므로, 대화가 없어도 기록은 남는다.
+  // 그 날을 대화로 설명할 수 없다는 것만 분명히 해 둔다.
+  if (conversationCount == 0) {
+    return '이 날은 인형과 이야기를 나누지 않으셨어요. 표정으로 읽은 감정만 담겼어요.';
+  }
+
+  var best = emotions.first;
+  var allSame = true;
+  for (final point in emotions) {
+    final height = emotionHeightOf(point.emotion);
+    if (height != emotionHeightOf(best.emotion)) allSame = false;
+    if (height > emotionHeightOf(best.emotion)) best = point;
+  }
+  // 다 같은 값이면 '가장 좋았던 때' 를 아무 데나 짚는 셈이 된다.
+  if (allSame) return '하루 종일 비슷한 상태로 지내셨어요.';
+
+  final at = best.createdAt;
+  if (at == null) return null;
+  final period = at.hour < 12 ? '오전' : '오후';
+  final hour = at.hour % 12 == 0 ? 12 : at.hour % 12;
+  return '$period $hour시 무렵 기분이 가장 좋으셨어요.';
+}
 
 class DailyReportScreen extends StatefulWidget {
   const DailyReportScreen({super.key});
@@ -25,7 +54,9 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
 
   String _name = '';
   DailyReportData? _report;
-  List<double> _moodHeights = [];
+  /// 그 날의 감정 기록(오래된 순). 그래프도 아래 한 줄 설명도 여기서 나온다.
+  List<EmotionPoint> _emotions = [];
+  List<ActivityItem> _routine = [];
   bool _loading = true;
   String? _error;
 
@@ -54,16 +85,14 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
       }
       _userId = user.userId;
       final report = await _api.dailyReport(user.userId, offset: _offset);
-      // 감정 흐름은 리포트에 없어서 홈이 주는 감정 기록을 그대로 쓴다.
-      final home = await _api.home(user.userId);
+      final emotions = await _emotionsFor(user.userId, report);
+      final routine = await _routineFor(user.userId, report);
       if (!mounted) return;
       setState(() {
         _name = user.name;
         _report = report;
-        _moodHeights = [
-          for (final point in home.emotionTrend)
-            emotionHeightOf(point.emotion),
-        ];
+        _emotions = emotions;
+        _routine = routine;
         _loading = false;
       });
     } on ApiException catch (e) {
@@ -94,9 +123,14 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
         );
         return;
       }
+      final emotions = await _emotionsFor(userId, report);
+      final routine = await _routineFor(userId, report);
+      if (!mounted) return;
       setState(() {
         _offset = next;
         _report = report;
+        _emotions = emotions;
+        _routine = routine;
         _stepping = false;
       });
     } catch (e) {
@@ -105,6 +139,37 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('리포트를 불러오지 못했어요: $e')));
+    }
+  }
+
+  /// 그 리포트가 다루는 날의 감정 기록(오래된 순).
+  /// 날짜를 모르는(예전) 리포트는 비워 둔다 — 날짜 없이 받으면 오늘 것이
+  /// 섞여 엉뚱한 날의 그래프가 그려진다.
+  Future<List<EmotionPoint>> _emotionsFor(
+    int userId,
+    DailyReportData? report,
+  ) async {
+    final day = report?.reportDate;
+    if (day == null) return [];
+    try {
+      // 서버가 최신순으로 주므로 그래프 순서에 맞게 뒤집는다.
+      return (await _api.emotions(userId, date: day)).reversed.toList();
+    } catch (_) {
+      // 감정을 못 받아도 리포트 나머지는 보여준다.
+      return [];
+    }
+  }
+
+  /// 그 리포트가 다루는 날의 일과. 날짜를 모르는(예전) 리포트는 비워 둔다 —
+  /// 날짜 없이 받으면 오늘 것이 섞여 엉뚱한 날에 붙는다.
+  Future<List<ActivityItem>> _routineFor(int userId, DailyReportData? report) async {
+    final day = report?.reportDate;
+    if (day == null) return [];
+    try {
+      return await _api.activities(userId, date: day);
+    } catch (_) {
+      // 일과를 못 받아도 리포트 나머지는 보여준다.
+      return [];
     }
   }
 
@@ -175,16 +240,29 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
                       SizedBox(height: 14.h),
                       Text('하루 감정 흐름', style: _sectionTitle()),
                       SizedBox(height: 8.h),
-                      if (_moodHeights.length >= 2)
-                        _MoodFlowCard(heights: _moodHeights)
+                      if (_emotions.length >= 2)
+                        _MoodFlowCard(
+                          heights: [
+                            for (final point in _emotions)
+                              emotionHeightOf(point.emotion),
+                          ],
+                          caption: moodCaptionOf(
+                            report.conversationCount,
+                            _emotions,
+                          ),
+                        )
                       else
-                        _notReadyYet('아직 기록된 감정이 없어요.'),
+                        _notReadyYet('이 날은 기록된 감정이 없어요.'),
                       SizedBox(height: 14.h),
                       Text('오늘 나눈 이야기', style: _sectionTitle()),
                       _notReadyYet('대화 발췌는 아직 제공되지 않아요.'),
                       SizedBox(height: 10.h),
                       Text('일과', style: _sectionTitle()),
-                      _notReadyYet('일과 기록은 아직 제공되지 않아요.'),
+                      if (_routine.isNotEmpty) ...[
+                        SizedBox(height: 8.h),
+                        _RoutineCard(items: _routine),
+                      ] else
+                        _notReadyYet('이 날은 남은 일과 기록이 없어요.'),
                       SizedBox(height: 14.h),
                       Text('제안', style: _sectionTitle()),
                       SizedBox(height: 8.h),
@@ -317,6 +395,7 @@ class _WeeklyReportScreenState extends State<WeeklyReportScreen> {
           SizedBox(height: 12.h),
           _WeeklyHeader(
             name: _name,
+            weekStart: report?.weekStart,
             at: report?.createdAt,
             onOlder: () => _step(1),
             onNewer: () => _step(-1),
@@ -414,6 +493,7 @@ class _WeeklyReportScreenState extends State<WeeklyReportScreen> {
 class _WeeklyHeader extends StatelessWidget {
   const _WeeklyHeader({
     required this.name,
+    this.weekStart,
     this.at,
     required this.onOlder,
     required this.onNewer,
@@ -422,6 +502,9 @@ class _WeeklyHeader extends StatelessWidget {
   });
 
   final String name;
+
+  /// 어느 주의 요약인지 — 그 주 월요일. 예전 리포트에는 없을 수 있다.
+  final DateTime? weekStart;
   final DateTime? at;
   final VoidCallback onOlder;
   final VoidCallback onNewer;
@@ -432,8 +515,18 @@ class _WeeklyHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 서버가 주 시작일을 주지 않아 만들어진 날짜를 그대로 보여준다.
-    final dateText = at == null ? '' : '${at!.month}월 ${at!.day}일 기준';
+    // 어느 주인지를 보여준다. 주 시작일이 없는(예전) 리포트만 만들어진
+    // 날짜로 물러난다.
+    final String dateText;
+    if (weekStart != null) {
+      final end = weekStart!.add(const Duration(days: 6));
+      dateText =
+          '${weekStart!.month}월 ${weekStart!.day}일 ~ ${end.month}월 ${end.day}일';
+    } else if (at != null) {
+      dateText = '${at!.month}월 ${at!.day}일 기준';
+    } else {
+      dateText = '';
+    }
 
     return Row(
       children: [
@@ -769,10 +862,13 @@ class _ScoreBox extends StatelessWidget {
 }
 
 class _MoodFlowCard extends StatelessWidget {
-  const _MoodFlowCard({required this.heights});
+  const _MoodFlowCard({required this.heights, this.caption});
 
   /// 0(바닥)~1(천장). 감정 기록을 오래된 순으로 늘어놓은 값.
   final List<double> heights;
+
+  /// 그래프 아래 한 줄. 짚어 줄 것이 없으면 null 이고, 그러면 칸을 그리지 않는다.
+  final String? caption;
 
   @override
   Widget build(BuildContext context) {
@@ -797,26 +893,25 @@ class _MoodFlowCard extends StatelessWidget {
               Text('저녁', style: _tiny()),
             ],
           ),
-          SizedBox(height: 12.h),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-            decoration: BoxDecoration(
-              color: const Color(0xFFFFF8E6),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.circle, size: 7, color: _yellow),
-                const SizedBox(width: 7),
-                Expanded(
-                  child: Text(
-                    '오후 5시 손녀와의 대화 후 가장 좋아지셨어요.',
-                    style: _tiny(color: _muted),
+          if (caption != null) ...[
+            SizedBox(height: 12.h),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF8E6),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.circle, size: 7, color: _yellow),
+                  const SizedBox(width: 7),
+                  Expanded(
+                    child: Text(caption!, style: _tiny(color: _muted)),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
+          ],
         ],
       ),
     );
@@ -881,44 +976,21 @@ class _StoryCard extends StatelessWidget {
 
 // ignore: unused_element
 class _RoutineCard extends StatelessWidget {
-  const _RoutineCard();
+  const _RoutineCard({required this.items});
+
+  /// 그날 남은 일과. 서버가 최신순으로 주므로 아침부터 보이게 뒤집어 그린다.
+  final List<ActivityItem> items;
 
   @override
   Widget build(BuildContext context) {
+    final ordered = items.reversed.toList();
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 12),
       decoration: _cardDecoration(),
       child: Column(
-        children: const [
-          _RoutineRow(
-            icon: Icons.wb_sunny_outlined,
-            title: '아침 인사',
-            subtitle: '오전 8:30 인형이 먼저',
-            trailing: Icons.check,
-            trailingColor: _green,
-          ),
-          _RoutineRow(
-            icon: Icons.medication_outlined,
-            title: '혈압약 복용',
-            subtitle: '아침 식후',
-            trailingText: '9:12',
-            trailingColor: _green,
-          ),
-          _RoutineRow(
-            icon: Icons.restaurant_outlined,
-            title: '식사',
-            subtitle: '아침 · 점심',
-            trailingText: '2 / 3',
-            trailingColor: _brown,
-          ),
-          _RoutineRow(
-            icon: Icons.nightlight_round,
-            title: '잠 자라는 인사',
-            subtitle: '오후 9:00',
-            trailingText: '-',
-            trailingColor: _muted,
-            last: true,
-          ),
+        children: [
+          for (var i = 0; i < ordered.length; i++)
+            _RoutineRow(item: ordered[i], last: i == ordered.length - 1),
         ],
       ),
     );
@@ -926,26 +998,24 @@ class _RoutineCard extends StatelessWidget {
 }
 
 class _RoutineRow extends StatelessWidget {
-  const _RoutineRow({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.trailingColor,
-    this.trailing,
-    this.trailingText,
-    this.last = false,
-  });
+  const _RoutineRow({required this.item, required this.last});
 
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final IconData? trailing;
-  final String? trailingText;
-  final Color trailingColor;
+  final ActivityItem item;
   final bool last;
+
+  /// 일과 한 줄의 시각. 홈 타임라인과 달리 한 줄에 들어가야 해서 짧게 쓴다.
+  String get _time {
+    final at = item.createdAt;
+    if (at == null) return '';
+    final period = at.hour < 12 ? '오전' : '오후';
+    final hour = at.hour % 12 == 0 ? 12 : at.hour % 12;
+    return '$period $hour:${at.minute.toString().padLeft(2, '0')}';
+  }
 
   @override
   Widget build(BuildContext context) {
+    final style = activityStyleOf(item.activityType);
+    final subtitle = (item.content ?? '').trim();
     return Container(
       padding: EdgeInsets.only(bottom: last ? 0 : 12, top: last ? 2 : 0),
       margin: EdgeInsets.only(bottom: last ? 0 : 12),
@@ -958,10 +1028,10 @@ class _RoutineRow extends StatelessWidget {
             width: 30,
             height: 30,
             decoration: BoxDecoration(
-              color: const Color(0xFFFFF3D2),
+              color: style.tint,
               borderRadius: BorderRadius.circular(9),
             ),
-            child: Icon(icon, color: _brown, size: 16),
+            child: Icon(style.icon, color: _brown, size: 16),
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -969,29 +1039,29 @@ class _RoutineRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  title,
+                  activityTitleOf(item.activityType),
                   style: const TextStyle(
                     fontSize: 12,
                     color: _dark,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
-                const SizedBox(height: 3),
-                Text(subtitle, style: _tiny(color: _muted)),
+                if (subtitle.isNotEmpty) ...[
+                  const SizedBox(height: 3),
+                  Text(subtitle, style: _tiny(color: _muted)),
+                ],
               ],
             ),
           ),
-          if (trailing != null)
-            Icon(trailing, size: 14, color: trailingColor)
-          else
-            Text(
-              trailingText ?? '',
-              style: TextStyle(
-                fontSize: 10,
-                color: trailingColor,
-                fontWeight: FontWeight.w900,
-              ),
+          const SizedBox(width: 8),
+          Text(
+            _time,
+            style: const TextStyle(
+              fontSize: 10,
+              color: _brown,
+              fontWeight: FontWeight.w900,
             ),
+          ),
         ],
       ),
     );
