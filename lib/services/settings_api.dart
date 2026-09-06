@@ -1546,6 +1546,8 @@ class DeviceVoice {
     required this.progress,
     required this.isDefault,
     required this.protectorId,
+    this.ownerName,
+    this.ownerRelation,
     this.audioUrl,
   });
 
@@ -1556,6 +1558,8 @@ class DeviceVoice {
     progress: json['progress'] as int? ?? 0,
     isDefault: json['isDefault'] == true,
     protectorId: json['protectorId'] as int?,
+    ownerName: json['ownerName'] as String?,
+    ownerRelation: json['ownerRelation'] as String?,
     audioUrl: json['audioUrl'] as String?,
   );
 
@@ -1565,6 +1569,18 @@ class DeviceVoice {
   final int progress;
   final bool isDefault;
   final int? protectorId;
+
+  /// 이 목소리를 등록한 가족. 인형에 들어 있는 기본 목소리는 비어 있다.
+  final String? ownerName;
+  final String? ownerRelation;
+
+  /// '딸 김민지' 처럼 부를 이름. 관계를 모르면 이름만 준다.
+  String get ownerLabel {
+    final name = (ownerName ?? '').trim();
+    if (name.isEmpty) return '';
+    final relation = (ownerRelation ?? '').trim();
+    return relation.isEmpty ? name : '$relation $name';
+  }
 
   bool get isBuiltIn => protectorId == null;
 
