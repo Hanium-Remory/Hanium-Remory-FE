@@ -50,6 +50,7 @@ dependencies:
   audioplayers: ^6.8.1
 
 dev_dependencies:
+  flutter_launcher_icons: ^0.14.4
   flutter_test:
     sdk: flutter
 
@@ -120,3 +121,16 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+# 앱 아이콘 생성 설정. 소재를 바꾼 뒤에는 아래를 다시 돌린다:
+#   dart run flutter_launcher_icons
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icon/remory_icon.png"
+  # 안드로이드 적응형 아이콘. 런처가 원·사각 등 제 모양대로 잘라내므로,
+  # 전경은 안쪽에 여유를 두고 그려 둔 것을 쓴다(가장자리가 잘려도 인형이 남는다).
+  adaptive_icon_background: "#E8CBA5"
+  adaptive_icon_foreground: "assets/icon/remory_icon_foreground.png"
+  # iOS 아이콘에는 알파 채널이 있으면 심사에서 막힌다. 만약을 위해 한 번 더 지운다.
+  remove_alpha_ios: true
