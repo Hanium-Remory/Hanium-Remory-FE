@@ -166,6 +166,8 @@ class _FamilyChatScreenState extends State<FamilyChatScreen> {
       mine: mine,
       kind: kind,
       imageUrl: m.imageUrl,
+      deliveredToDevice: m.deliveredToDevice,
+      readCount: m.readCount,
     );
   }
 
@@ -276,12 +278,25 @@ class _FamilyChatScreenState extends State<FamilyChatScreen> {
         ),
       );
     }
+    // 인형이 어디까지 읽어드렸는지. 그 자리 바로 뒤에 금을 하나 긋는다.
+    // 아직 하나도 못 읽어드렸으면(=-1) 금을 긋지 않는다 — 맨 위에 걸리면
+    // 무엇을 가르는 선인지 알 수 없다.
+    final lastRead = _messages.lastIndexWhere((m) => m.deliveredToDevice);
+    final showDivider = lastRead >= 0 && lastRead < _messages.length - 1;
+
     return ListView.builder(
       controller: _scrollController,
       physics: const BouncingScrollPhysics(),
       padding: EdgeInsets.only(bottom: 12.h),
       itemCount: _messages.length,
-      itemBuilder: (context, index) => _MessageRow(message: _messages[index]),
+      itemBuilder: (context, index) {
+        final row = _MessageRow(message: _messages[index]);
+        if (!showDivider || index != lastRead) return row;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [row, const _ReadUpToHereDivider()],
+        );
+      },
     );
   }
 
@@ -477,6 +492,35 @@ class _TinyMember extends StatelessWidget {
   }
 }
 
+/// 인형이 어르신께 여기까지 읽어드렸다는 금. 가운데에 담담하게 둔다.
+class _ReadUpToHereDivider extends StatelessWidget {
+  const _ReadUpToHereDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: 10.h),
+      child: Center(
+        child: Container(
+          padding: EdgeInsets.symmetric(horizontal: 14.w, vertical: 7.h),
+          decoration: BoxDecoration(
+            color: const Color(0xFFE4DED6),
+            borderRadius: BorderRadius.circular(99),
+          ),
+          child: Text(
+            '여기까지 읽어드렸어요',
+            style: TextStyle(
+              fontSize: 11.sp,
+              color: const Color(0xFF6B5D53),
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _MessageRow extends StatelessWidget {
   const _MessageRow({required this.message});
 
@@ -493,6 +537,7 @@ class _MessageRow extends StatelessWidget {
         sender: message.sender,
         time: message.time,
         mine: message.mine,
+        readCount: message.readCount,
         child: _PhotoBubble(imageUrl: message.imageUrl),
       );
     }
@@ -501,6 +546,7 @@ class _MessageRow extends StatelessWidget {
       sender: message.sender,
       time: message.time,
       mine: message.mine,
+      readCount: message.readCount,
       child: Text(
         message.text,
         style: TextStyle(
@@ -519,12 +565,16 @@ class _ChatBubbleShell extends StatelessWidget {
     required this.sender,
     required this.time,
     required this.mine,
+    this.readCount = 0,
     required this.child,
   });
 
   final String sender;
   final String time;
   final bool mine;
+
+  /// 이 글을 읽은 가족 수. 0 이면 아무것도 그리지 않는다.
+  final int readCount;
   final Widget child;
 
   @override
@@ -563,10 +613,58 @@ class _ChatBubbleShell extends StatelessWidget {
               children: [
                 // 내 메시지는 버블 오른쪽에 시간을 따로 그린다. 여기서도 그리면
                 // 같은 시간이 두 번 보인다.
-                if (!mine && time.isNotEmpty)
+                if (!mine && (time.isNotEmpty || readCount > 0))
                   Padding(
                     padding: const EdgeInsets.only(bottom: 4),
-                    child: Text(
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (time.isNotEmpty)
+                          Text(
+                            time,
+                            style: const TextStyle(
+                              fontSize: 8,
+                              color: _muted,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        if (readCount > 0) ...[
+                          const SizedBox(width: 5),
+                          Text(
+                            '$readCount',
+                            style: const TextStyle(
+                              fontSize: 9,
+                              color: _brown,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                bubble,
+              ],
+            ),
+          ),
+          if (mine && (time.isNotEmpty || readCount > 0)) ...[
+            const SizedBox(width: 6),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (readCount > 0)
+                    Text(
+                      '$readCount',
+                      style: const TextStyle(
+                        fontSize: 9,
+                        color: _brown,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  if (time.isNotEmpty)
+                    Text(
                       time,
                       style: const TextStyle(
                         fontSize: 8,
@@ -574,22 +672,7 @@ class _ChatBubbleShell extends StatelessWidget {
                         fontWeight: FontWeight.w700,
                       ),
                     ),
-                  ),
-                bubble,
-              ],
-            ),
-          ),
-          if (mine && time.isNotEmpty) ...[
-            const SizedBox(width: 6),
-            Padding(
-              padding: const EdgeInsets.only(bottom: 6),
-              child: Text(
-                time,
-                style: const TextStyle(
-                  fontSize: 8,
-                  color: _muted,
-                  fontWeight: FontWeight.w700,
-                ),
+                ],
               ),
             ),
           ],
@@ -742,14 +825,18 @@ class _InputBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 48,
+      // 높이를 고정하지 않는다. 길게 쓰면 옆으로 밀려나는 대신 아래로 늘어난다.
+      constraints: const BoxConstraints(minHeight: 48),
       padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(99),
+        // 여러 줄이 되면 알약 모양이 늘어져 보인다. 둥근 네모로 둔다.
+        borderRadius: BorderRadius.circular(22),
         border: Border.all(color: _line),
       ),
       child: Row(
+        // 줄이 늘어도 사진·보내기 단추는 아래에 붙어 있게 한다.
+        crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           GestureDetector(
             onTap: onPhoto,
@@ -768,11 +855,10 @@ class _InputBar extends StatelessWidget {
             child: TextField(
               controller: controller,
               minLines: 1,
-              maxLines: 1,
-              textInputAction: TextInputAction.send,
-              onSubmitted: (_) {
-                if (canSend) onSend();
-              },
+              // 다섯 줄까지 자라고, 그 뒤로는 입력칸 안에서 위아래로 굴린다.
+              maxLines: 5,
+              keyboardType: TextInputType.multiline,
+              textInputAction: TextInputAction.newline,
               decoration: InputDecoration(
                 isDense: true,
                 hintText: '${SessionStore.elderHonorific}께 전할 말을 입력하세요',
@@ -866,6 +952,8 @@ class _ChatMessage {
     this.mine = false,
     this.kind = _MessageKind.text,
     this.imageUrl,
+    this.deliveredToDevice = false,
+    this.readCount = 0,
   });
 
   final int messageId;
@@ -877,4 +965,10 @@ class _ChatMessage {
   final bool mine;
   final _MessageKind kind;
   final String? imageUrl;
+
+  /// 인형이 어르신께 읽어드렸는지.
+  final bool deliveredToDevice;
+
+  /// 이 글을 읽은 가족 수.
+  final int readCount;
 }

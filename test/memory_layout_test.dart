@@ -80,21 +80,22 @@ void main() {
       onSelectNewMemory: () {}));
   });
 
-  testWidgets('두 화면 모두 무엇이 다른지 설명을 보여준다', (tester) async {
+  testWidgets('고른 쪽 설명만 보여준다', (tester) async {
     _usePhoneScreen(tester);
 
-    for (final screen in [
-      MemoryTypeScreen(onOpenMemoryForm: () {}, onSave: () {}),
-      MemoryAddScreen(
-        onSave: ({required photo, required filename, required title,
-                  required period, required description}) async {},
-        onSelectNewMemory: () {}),
-    ]) {
-      await tester.pumpWidget(_wrap(screen));
-      await tester.pumpAndSettle();
-      expect(find.textContaining('가족과 함께한 지난 일'), findsOneWidget);
-      expect(find.textContaining('알아두면 좋을 것들'), findsOneWidget);
-    }
+    await tester.pumpWidget(_wrap(MemoryAddScreen(
+      onSave: ({required photo, required filename, required title,
+                required period, required description}) async {},
+      onSelectNewMemory: () {})));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('가족과 함께한 지난 일'), findsOneWidget);
+    expect(find.textContaining('알아두면 좋을 것들'), findsNothing);
+
+    await tester.pumpWidget(_wrap(MemoryTypeScreen(
+      onOpenMemoryForm: () {}, onSave: () {})));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('알아두면 좋을 것들'), findsOneWidget);
+    expect(find.textContaining('가족과 함께한 지난 일'), findsNothing);
   });
 
   testWidgets("'언제 기억인가요' 칩 넷이 한 줄에 선다", (tester) async {

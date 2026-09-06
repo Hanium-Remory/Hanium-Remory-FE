@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import '../1. splash_onboarding/splash_screen.dart';
 import '../services/push_service.dart';
@@ -42,6 +43,7 @@ class _HubData {
     required this.dnd,
     required this.medications,
     required this.info,
+    required this.appVersion,
   });
 
   final MyProfile profile;
@@ -49,6 +51,9 @@ class _HubData {
   final DndSettings? dnd;
   final MedicationList? medications;
   final ServiceInfo? info;
+
+  /// 이 폰에 깔린 앱의 버전. 서버가 알려주는 서비스 버전과 다른 값이다.
+  final String appVersion;
 }
 
 Future<_HubData> _loadHub() async {
@@ -77,7 +82,18 @@ Future<_HubData> _loadHub() async {
     dnd: await dndF,
     medications: await medsF,
     info: await infoF,
+    appVersion: await _appVersion(),
   );
+}
+
+/// 이 폰에 깔린 앱 버전. 못 읽어도 화면은 열려야 하므로 빈 글로 물러난다.
+Future<String> _appVersion() async {
+  try {
+    final info = await PackageInfo.fromPlatform();
+    return '버전 ${info.version} (${info.buildNumber})';
+  } catch (_) {
+    return '';
+  }
 }
 
 class SettingsHubScreen extends StatelessWidget {
@@ -297,7 +313,10 @@ class _HubBody extends StatelessWidget {
             _MenuRow(
               icon: Icons.info_outline,
               title: 'ReMory 정보',
-              subtitle: data.info == null ? '' : '버전 ${data.info!.version}',
+              // 여기 있던 것은 서버가 알려주는 서비스 버전이라, 이 폰에 깔린
+              // 앱과 무관했다. 앱을 새로 깔아도 숫자가 그대로였고, 앱을 안
+              // 고쳐도 서버 설정만 바꾸면 숫자가 따라 바뀌었다.
+              subtitle: data.appVersion,
             ),
           ],
         ),

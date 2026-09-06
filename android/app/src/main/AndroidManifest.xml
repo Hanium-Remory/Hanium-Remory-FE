@@ -5,7 +5,7 @@
          PushService.start() 가 앱에서 이 권한을 묻는다. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <application
-        android:label="flutter_application_1"
+        android:label="ReMory"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
