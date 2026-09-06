@@ -19,6 +19,11 @@ const bool kUseMockSettingsForDevelopment = false;
 /// 몇 분 뒤에 한 번 더 여쭤볼지.
 const int kMedicationRecheckMinutes = 10;
 
+/// 세션이 되살릴 수 없게 끊겼을 때(리프레시 토큰이 서버에 거부됨) 호출된다.
+/// 앱 시작 시 main 에서 로그인 화면으로 되돌리는 함수를 꽂아 준다. 위젯 계층을
+/// 모르는 채로 두려고 콜백으로 받는다.
+Future<void> Function()? onSessionExpired;
+
 /// 서버가 돌려준 message를 그대로 사용자에게 보여줄 수 있는 에러.
 class ApiException implements Exception {
   ApiException(this.message, this.status);
@@ -100,13 +105,25 @@ class SettingsApi {
 
   Future<bool> _refreshSession() async {
     final refresh = await SessionStore.refreshToken();
-    if (refresh == null || refresh.isEmpty) return false;
+    if (refresh == null || refresh.isEmpty) {
+      // 인증이 필요한 요청인데 리프레시 토큰이 없다 — 세션이 없는 셈이다.
+      await _forceRelogin();
+      return false;
+    }
     try {
       final res = await _client.post(
         Uri.parse('$baseUrl/auth/token/refresh'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'refreshToken': refresh}),
       );
+      // 서버가 리프레시 토큰을 거부(만료·회수, 또는 재배포로 서명 키가 바뀌어
+      // 기존 토큰이 전부 무효)했다면 이 세션은 되살릴 수 없다. 조용히 에러만
+      // 띄우지 말고 로그인 화면으로 돌려보낸다.
+      if (res.statusCode == 401 || res.statusCode == 403) {
+        await _forceRelogin();
+        return false;
+      }
+      // 5xx 같은 일시 오류는 세션을 지우지 않는다. 잠시 뒤 다시 되면 살아난다.
       if (res.statusCode >= 400) return false;
       final data =
           (jsonDecode(res.body) as Map<String, dynamic>)['data']
@@ -117,8 +134,19 @@ class SettingsApi {
       );
       return true;
     } catch (_) {
+      // 네트워크 오류 — 세션은 살아 있을 수 있으니 지우지 않는다.
       return false;
     }
+  }
+
+  /// 세션이 죽었을 때 저장된 토큰을 지우고 로그인 화면으로 되돌린다.
+  /// 여러 요청이 동시에 401 을 받아도 이동은 한 번만 일어난다.
+  Future<void> _forceRelogin() async {
+    if (SessionStore.expiredHandled) return;
+    SessionStore.expiredHandled = true;
+    await SessionStore.clear();
+    final handler = onSessionExpired;
+    if (handler != null) await handler();
   }
 
   // ── 보호자 프로필 ──────────────────────────────────
@@ -159,6 +187,14 @@ class SettingsApi {
   }
 
   Future<void> withdraw() async => _send('DELETE', '/protectors/me');
+
+  /// 이 기기의 로그인을 끝낸다. 서버에서 리프레시 토큰을 회수해,
+  /// 폰을 잃어버려도 남의 손에서 다시 로그인되지 않게 한다.
+  Future<void> logout(String refreshToken) async => _send(
+    'POST',
+    '/auth/logout',
+    body: {'refreshToken': refreshToken},
+  );
 
   // ── 푸시 토큰 ──────────────────────────────────────
   /// 이 폰의 FCM 토큰을 등록한다. 같은 토큰을 다시 보내도 안전하다.

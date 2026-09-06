@@ -301,8 +301,82 @@ class _HubBody extends StatelessWidget {
             ),
           ],
         ),
-        SizedBox(height: 16.h),
+        SizedBox(height: 28.h),
+        const _LogoutButton(),
+        SizedBox(height: 24.h),
       ],
+    );
+  }
+}
+
+/// 이 기기의 로그인을 끝낸다.
+///
+/// 회원 탈퇴(프로필 화면)와는 다르다. 탈퇴는 계정과 돌봄 기록을 지우지만,
+/// 로그아웃은 이 폰에서 나가기만 한다. 다시 로그인하면 그대로 이어진다.
+class _LogoutButton extends StatefulWidget {
+  const _LogoutButton();
+
+  @override
+  State<_LogoutButton> createState() => _LogoutButtonState();
+}
+
+class _LogoutButtonState extends State<_LogoutButton> {
+  bool _busy = false;
+
+  Future<void> _logout() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('로그아웃', style: TextStyle(fontWeight: FontWeight.w900)),
+        content: const Text('이 기기에서 로그아웃할까요?\n돌봄 기록은 그대로 남아요.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('취소'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('로그아웃'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+
+    setState(() => _busy = true);
+    // 푸시부터 끊는다. 폰을 넘겨받은 사람에게 남의 알림이 가면 안 된다.
+    await PushService.stop();
+    final refresh = await SessionStore.refreshToken();
+    if (refresh != null && refresh.isNotEmpty) {
+      try {
+        await SettingsApi().logout(refresh);
+      } catch (_) {
+        // 서버에 못 알려도 이 폰에서는 나간다. 토큰은 어차피 만료된다.
+      }
+    }
+    await SessionStore.clear();
+    if (!mounted) return;
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (_) => const SplashScreen()),
+      (route) => false,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: TextButton(
+        onPressed: _busy ? null : _logout,
+        child: Text(
+          _busy ? '로그아웃 중…' : '로그아웃',
+          style: TextStyle(
+            fontSize: 13.sp,
+            color: _muted,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ),
     );
   }
 }
