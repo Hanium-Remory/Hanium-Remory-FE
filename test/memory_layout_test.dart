@@ -14,6 +14,12 @@ void _usePhoneScreen(WidgetTester tester) {
   addTearDown(tester.view.reset);
 }
 
+/// 칩 줄 안의 글자만 짚는다. 아래 설명도 같은 낱말을 쓰기 때문이다.
+Finder _chip(String label) => find.descendant(
+  of: find.byKey(memoryTypeChipsKey),
+  matching: find.text(label),
+);
+
 Widget _wrap(Widget child) => ScreenUtilInit(
   designSize: const Size(390, 844),
   builder: (_, _) => MaterialApp(home: child),
@@ -26,8 +32,8 @@ void main() {
       onOpenMemoryForm: () {}, onSave: () {})));
     await tester.pumpAndSettle();
     expect(find.text('기억 추가'), findsOneWidget);
-    expect(find.text('새 기억'), findsOneWidget);      // 칩으로만 남는다
-    expect(find.text('새 추억'), findsOneWidget);
+    expect(_chip('새 기억'), findsOneWidget);
+    expect(_chip('새 추억'), findsOneWidget);
 
     await tester.pumpWidget(_wrap(MemoryAddScreen(
       onSave: ({required photo, required filename, required title,
@@ -54,6 +60,41 @@ void main() {
     final onAdd = tester.getTopLeft(find.text(label));
 
     expect(onAdd, onType, reason: '두 화면 사이를 오갈 때 문구가 흔들리면 안 된다');
+  });
+
+  testWidgets('새 추억 칩이 새 기억보다 앞에 있다', (tester) async {
+    _usePhoneScreen(tester);
+
+    Future<void> check(Widget screen) async {
+      await tester.pumpWidget(_wrap(screen));
+      await tester.pumpAndSettle();
+      final memo = tester.getTopLeft(_chip('새 추억')).dx;
+      final note = tester.getTopLeft(_chip('새 기억')).dx;
+      expect(memo, lessThan(note), reason: '새 추억이 왼쪽이어야 한다');
+    }
+
+    await check(MemoryTypeScreen(onOpenMemoryForm: () {}, onSave: () {}));
+    await check(MemoryAddScreen(
+      onSave: ({required photo, required filename, required title,
+                required period, required description}) async {},
+      onSelectNewMemory: () {}));
+  });
+
+  testWidgets('두 화면 모두 무엇이 다른지 설명을 보여준다', (tester) async {
+    _usePhoneScreen(tester);
+
+    for (final screen in [
+      MemoryTypeScreen(onOpenMemoryForm: () {}, onSave: () {}),
+      MemoryAddScreen(
+        onSave: ({required photo, required filename, required title,
+                  required period, required description}) async {},
+        onSelectNewMemory: () {}),
+    ]) {
+      await tester.pumpWidget(_wrap(screen));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('가족과 함께한 지난 일'), findsOneWidget);
+      expect(find.textContaining('알아두면 좋을 것들'), findsOneWidget);
+    }
   });
 
   testWidgets("'언제 기억인가요' 칩 넷이 한 줄에 선다", (tester) async {

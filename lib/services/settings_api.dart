@@ -188,6 +188,14 @@ class SettingsApi {
 
   Future<void> withdraw() async => _send('DELETE', '/protectors/me');
 
+  /// 이 기기의 로그인을 끝낸다. 서버에서 리프레시 토큰을 회수해,
+  /// 폰을 잃어버려도 남의 손에서 다시 로그인되지 않게 한다.
+  Future<void> logout(String refreshToken) async => _send(
+    'POST',
+    '/auth/logout',
+    body: {'refreshToken': refreshToken},
+  );
+
   // ── 푸시 토큰 ──────────────────────────────────────
   /// 이 폰의 FCM 토큰을 등록한다. 같은 토큰을 다시 보내도 안전하다.
   Future<void> registerPushToken(String token, {String platform = 'android'}) async =>

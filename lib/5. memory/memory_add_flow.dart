@@ -145,6 +145,10 @@ class _MemoryAddFlowState extends State<MemoryAddFlow> {
 /// 다르면 '추가하고 싶은 부분을 선택해주세요' 가 전환할 때마다 위아래로 흔들린다.
 final double _headerGap = 14.h;
 
+/// 종류를 고르는 칩 줄. 아래 설명이 같은 낱말('새 추억'·'새 기억')을 쓰므로,
+/// 칩만 짚어야 할 때 이 표식으로 가려낸다.
+const Key memoryTypeChipsKey = Key('memoryTypeChips');
+
 class MemoryTypeScreen extends StatelessWidget {
   const MemoryTypeScreen({
     super.key,
@@ -175,15 +179,8 @@ class MemoryTypeScreen extends StatelessWidget {
                     children: [
                       const _Label('추가하고 싶은 부분을 선택해주세요'),
                       Row(
+                        key: memoryTypeChipsKey,
                         children: [
-                          Expanded(
-                            child: _ChipButton(
-                              text: '새 기억',
-                              selected: true,
-                              onTap: () {},
-                            ),
-                          ),
-                          SizedBox(width: 8.w),
                           Expanded(
                             child: _ChipButton(
                               text: '새 추억',
@@ -191,8 +188,18 @@ class MemoryTypeScreen extends StatelessWidget {
                               onTap: onOpenMemoryForm,
                             ),
                           ),
+                          SizedBox(width: 8.w),
+                          Expanded(
+                            child: _ChipButton(
+                              text: '새 기억',
+                              selected: true,
+                              onTap: () {},
+                            ),
+                          ),
                         ],
                       ),
+                      SizedBox(height: 10.h),
+                      const _TypeGuide(),
                       SizedBox(height: 18.h),
                       TextField(
                         minLines: 12,
@@ -349,15 +356,8 @@ class _MemoryAddScreenState extends State<MemoryAddScreen> {
                     children: [
                       const _Label('추가하고 싶은 부분을 선택해주세요'),
                       Row(
+                        key: memoryTypeChipsKey,
                         children: [
-                          Expanded(
-                            child: _ChipButton(
-                              text: '새 기억',
-                              selected: false,
-                              onTap: widget.onSelectNewMemory,
-                            ),
-                          ),
-                          SizedBox(width: 8.w),
                           Expanded(
                             child: _ChipButton(
                               text: '새 추억',
@@ -365,8 +365,18 @@ class _MemoryAddScreenState extends State<MemoryAddScreen> {
                               onTap: () {},
                             ),
                           ),
+                          SizedBox(width: 8.w),
+                          Expanded(
+                            child: _ChipButton(
+                              text: '새 기억',
+                              selected: false,
+                              onTap: widget.onSelectNewMemory,
+                            ),
+                          ),
                         ],
                       ),
+                      SizedBox(height: 10.h),
+                      const _TypeGuide(),
                       SizedBox(height: 18.h),
                       _PhotoUploadBox(
                         imageBytes: _selectedPhoto,
@@ -726,6 +736,69 @@ class _TextFieldBox extends StatelessWidget {
   }
 }
 
+/// 새 추억과 새 기억이 무엇이 다른지. 두 화면이 같은 위젯을 써야
+/// 칩으로 오갈 때 아래 내용이 밀리지 않는다.
+class _TypeGuide extends StatelessWidget {
+  const _TypeGuide();
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _TypeGuideLine(
+          term: '새 추억',
+          body: '가족과 함께한 지난 일. 사진과 함께 그날 이야기를 남겨요.',
+        ),
+        SizedBox(height: 4.h),
+        _TypeGuideLine(
+          term: '새 기억',
+          body: '가족이 누구인지 같은, 알아두면 좋을 것들을 적어요.',
+        ),
+      ],
+    );
+  }
+}
+
+class _TypeGuideLine extends StatelessWidget {
+  const _TypeGuideLine({required this.term, required this.body});
+
+  final String term;
+  final String body;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 44.w,
+          child: Text(
+            term,
+            style: TextStyle(
+              fontSize: 11.sp,
+              height: 1.5,
+              color: _brown,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ),
+        Expanded(
+          child: Text(
+            body,
+            style: TextStyle(
+              fontSize: 11.sp,
+              height: 1.5,
+              color: const Color(0xFF8A7A6D),
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _ChipButton extends StatelessWidget {
   const _ChipButton({
     required this.text,
@@ -791,7 +864,10 @@ class _GuideBox extends StatelessWidget {
           SizedBox(width: 10.w),
           Expanded(
             child: Text(
-              '인형은 이 기억을 자연스러운 대화로 ${SessionStore.elderHonorific}께 들려드려요.\n정확한 단어는 다르게 표현될 수 있어요.',
+              // 인형이 기억을 '읽어 주는' 게 아니다. 대화할 때 참고해서
+              // 옛일을 떠올리시도록 돕는 재료다.
+              '인형이 ${SessionStore.elderHonorific}과 이야기할 때 이 기억을 참고해요.\n'
+              '옛일을 떠올리시도록 대화 속에서 자연스럽게 꺼내 놓아요.',
               style: TextStyle(
                 fontSize: 11.sp,
                 color: _muted,
