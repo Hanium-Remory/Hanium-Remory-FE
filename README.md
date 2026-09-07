@@ -299,5 +299,5 @@ flutter build ios --release
 
 ## 🔗 관련 저장소
 
-- [ReMory Frontend](https://github.com/Hanium-Remory/flutter)
+- [ReMory Hardware](https://github.com/Hanium-Remory/Hanium-Remory-HW)
 - [ReMory Backend](https://github.com/Hanium-Remory/Hanium-Remory-BE)
