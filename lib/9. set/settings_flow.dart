@@ -2148,7 +2148,9 @@ class _NotificationSettingsBodyState extends State<_NotificationSettingsBody> {
               SizedBox(height: 18.h),
               _NotificationGroup(
                 title: '긴급',
-                names: const ['감정 변화', '기기 연결 해제', '약 미복용'],
+                // '약 미복용' 은 인형이 복용 여부를 아직 확인하지 못해 알림을
+                // 보낼 수 없다. 기능이 생기면 다시 넣는다.
+                names: const ['감정 변화', '기기 연결 해제'],
                 values: values,
                 onChanged: _setValue,
               ),
@@ -3275,9 +3277,9 @@ String _notificationSubtitle(String name) {
     '감정 변화' => '평소와 다른 부정 감정 1시간 이상',
     '기기 연결 해제' => '인형이 끊겼을 때',
     '약 미복용' => '알림 후 10분 내 확인 안 됨',
-    '어머님 음성 요청' => '가족과 이야기하고 싶다고 하실 때',
+    '어머님 음성 요청' => '가족 메시지에 말씀으로 답하셨을 때',
     '메시지 전달 완료' => '인형이 ${SessionStore.elderHonorific}께 읽어드렸을 때',
-    '목소리 학습 완료' => '내 목소리 클로닝이 끝났을 때',
+    '목소리 학습 완료' => '내가 등록한 목소리가 준비됐을 때',
     '데일리 리포트' => '매일 아침 7시',
     '주간 리포트' => '매주 월요일 아침',
     _ => '새 기능 안내',
