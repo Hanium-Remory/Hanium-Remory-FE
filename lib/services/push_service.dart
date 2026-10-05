@@ -19,6 +19,7 @@ import 'dart:async';
 
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/painting.dart' show Color;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import 'settings_api.dart';
@@ -93,7 +94,9 @@ class PushService {
     if (_localReady) return;
     await _local.initialize(
       settings: const InitializationSettings(
-        android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+        // 상태바 아이콘. 앱 아이콘을 한 가지 색으로 그린 것이다(사진 같은
+        // 앱 아이콘을 쓰면 상태바에서 흰 덩어리로 보인다).
+        android: AndroidInitializationSettings('@drawable/ic_stat_remory'),
       ),
     );
     await _local
@@ -120,6 +123,7 @@ class PushService {
             channelDescription: _channel.description,
             importance: Importance.high,
             priority: Priority.high,
+            color: const Color(0xFF936249),
           ),
         ),
       );
