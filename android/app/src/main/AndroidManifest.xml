@@ -30,6 +30,11 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        <!-- 앱이 꺼져 있을 때 FCM 이 알림을 띄울 채널. 중요도 '높음' 채널이어야
+             폰 상단에 팝업으로 내려온다. 채널은 PushService 가 앱 시작 때 만든다. -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="remory_alerts" />
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data
