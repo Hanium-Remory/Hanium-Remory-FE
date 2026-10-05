@@ -1610,6 +1610,11 @@ class DeviceVoice {
 
   bool get isBuiltIn => protectorId == null;
 
+  /// 지울 수 있는지. 가족 누구나 골라 쓸 수 있지만, 지우는 건 등록한 본인만
+  /// 한다(서버도 같은 기준으로 막는다). 인형에 든 기본 목소리는 아무도 못 지운다.
+  bool canBeDeletedBy(int? myProtectorId) =>
+      !isBuiltIn && myProtectorId != null && protectorId == myProtectorId;
+
   /// 등록한 원본 녹음. 다시 들어볼 때 쓴다.
   final String? audioUrl;
 

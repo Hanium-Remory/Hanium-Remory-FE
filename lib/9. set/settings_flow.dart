@@ -1304,22 +1304,32 @@ class _DollSettingsBody extends StatelessWidget {
             child: Text('아직 등록된 목소리가 없어요.', style: _caption()),
           )
         else
-          _SectionCard(
-            children: device.voices
-                .map(
-                  (voice) => _VoiceRow(
-                    audioUrl: voice.audioUrl,
-                    name: voice.name,
-                    subtitle: _voiceSubtitle(voice),
-                    checked: voice.isDefault,
-                    progress: voice.isTraining ? voice.progress / 100 : null,
-                    onTap: () => _selectVoice(context, voice),
-                    onDelete: voice.isBuiltIn
-                        ? null
-                        : () => _deleteVoice(context, voice),
-                  ),
-                )
-                .toList(),
+          // 삭제 버튼은 내가 등록한 목소리에만 붙는다. 내 id 를 아직 못
+          // 읽었으면 아무것에도 붙이지 않는다(남의 것을 지우게 두지 않는다).
+          FutureBuilder<int?>(
+            future: SessionStore.protectorId(),
+            builder: (context, snapshot) {
+              final myId = snapshot.data;
+              return _SectionCard(
+                children: device.voices
+                    .map(
+                      (voice) => _VoiceRow(
+                        audioUrl: voice.audioUrl,
+                        name: voice.name,
+                        subtitle: _voiceSubtitle(voice),
+                        checked: voice.isDefault,
+                        progress: voice.isTraining
+                            ? voice.progress / 100
+                            : null,
+                        onTap: () => _selectVoice(context, voice),
+                        onDelete: voice.canBeDeletedBy(myId)
+                            ? () => _deleteVoice(context, voice)
+                            : null,
+                      ),
+                    )
+                    .toList(),
+              );
+            },
           ),
         SizedBox(height: 10.h),
         OutlinedButton.icon(
