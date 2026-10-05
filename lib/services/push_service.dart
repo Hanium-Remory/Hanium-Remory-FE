@@ -26,6 +26,7 @@ class PushService {
   static String? _token;
 
   static StreamSubscription<String>? _refreshSub;
+  static StreamSubscription<RemoteMessage>? _messageSub;
 
   /// 새 알림이 도착했다고 알려준다. 앱이 떠 있는 동안 온 푸시는 시스템
   /// 알림으로 뜨지 않으므로, 화면이 이걸 듣고 알림함을 다시 불러온다.
@@ -45,7 +46,7 @@ class PushService {
       // 한 번만 걸어 둔다. 로그아웃했다 다시 로그인해도 중복으로 붙지 않는다.
       _refreshSub ??= messaging.onTokenRefresh.listen(_register);
 
-      FirebaseMessaging.onMessage.listen((_) => arrived.value++);
+      _messageSub ??= FirebaseMessaging.onMessage.listen((_) => arrived.value++);
     } catch (e) {
       // 권한 거부, 구글 플레이 서비스 없음(에뮬레이터) 등. 앱은 그대로 쓴다.
       debugPrint('푸시를 켜지 못했어요: $e');
