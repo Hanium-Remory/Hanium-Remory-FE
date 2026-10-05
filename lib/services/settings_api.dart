@@ -1313,6 +1313,7 @@ class ChatMessage {
     this.senderId,
     this.content,
     this.imageUrl,
+    this.audioUrl,
     this.deliveredToDevice = false,
     this.unreadCount = 0,
     this.createdAt,
@@ -1324,6 +1325,7 @@ class ChatMessage {
     senderId: json['senderId'] as int?,
     content: json['content'] as String?,
     imageUrl: json['imageUrl'] as String?,
+    audioUrl: json['audioUrl'] as String?,
     deliveredToDevice: json['deliveredToDevice'] == true,
     unreadCount: (json['unreadCount'] as int?) ?? 0,
     createdAt: DateTime.tryParse(
@@ -1340,6 +1342,9 @@ class ChatMessage {
   final int? senderId;
   final String? content;
   final String? imageUrl;
+
+  /// 어르신 답장의 목소리 녹음. 있으면 말풍선 옆에 재생 버튼이 붙는다.
+  final String? audioUrl;
 
   /// 인형이 어르신께 읽어드렸는지. '여기까지 읽어드렸어요' 를 어디에 놓을지 정한다.
   final bool deliveredToDevice;
