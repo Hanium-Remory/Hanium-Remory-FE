@@ -139,4 +139,23 @@ void main() {
   test('다 읽었으면 아무것도 안 붙는다', () {
     expect(unreadBadgeText(0), '');
   });
+
+  test('어르신 답장은 목소리 주소를 함께 읽는다', () {
+    final reply = ChatMessage.fromJson({
+      'messageId': 9,
+      'senderType': 'user',
+      'senderId': null,
+      'content': '아이고, 많이 컸네 우리 손주.',
+      'audioUrl': 'https://b.s3.amazonaws.com/chat-replies/r.wav?sig=1',
+      'deliveredToDevice': true,
+      'unreadCount': 2,
+      'createdAt': '2026-10-05T00:18:00+00:00',
+    });
+    expect(reply.audioUrl, contains('chat-replies/r.wav'));
+    expect(reply.content, '아이고, 많이 컸네 우리 손주.');
+  });
+
+  test('목소리가 없는 메시지는 재생할 것이 없다', () {
+    expect(_msg(1).audioUrl, isNull);
+  });
 }

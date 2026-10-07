@@ -1,10 +1,12 @@
 import 'dart:async';
 
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../main_shell.dart';
+import '../services/auth_api.dart' show kBackendBaseUrl;
 import '../services/session_store.dart';
 import '../services/settings_api.dart';
 
@@ -40,6 +42,7 @@ class _FamilyChatScreenState extends State<FamilyChatScreen> {
   int? _userId;
   int? _myProtectorId;
   String _elderInitial = '';
+  String _elderName = '';
   final Map<int, String> _memberInitials = {};
 
   /// 대화방에 연결된 가족 수. 1명(나뿐)이면 헤더 배지를 숨긴다.
@@ -76,6 +79,7 @@ class _FamilyChatScreenState extends State<FamilyChatScreen> {
       }
       _userId = user.userId;
       _elderInitial = user.name.isEmpty ? '' : user.name.substring(0, 1);
+      _elderName = user.name;
       _myProtectorId = await SessionStore.protectorId();
 
       try {
@@ -163,7 +167,10 @@ class _FamilyChatScreenState extends State<FamilyChatScreen> {
           shownDay = day;
         }
       }
-      rows.add(_MessageRow(message: message));
+      // 10초마다 목록을 다시 받아도 재생 중인 답장이 끊기지 않게 키를 둔다.
+      rows.add(
+        _MessageRow(key: ValueKey(message.messageId), message: message),
+      );
       if (showRead && i == lastRead) {
         rows.add(const _CenterPill(text: '여기까지 읽어드렸어요'));
       }
@@ -214,6 +221,11 @@ class _FamilyChatScreenState extends State<FamilyChatScreen> {
       mine: mine,
       kind: kind,
       imageUrl: m.imageUrl,
+      audioUrl: m.audioUrl,
+      // 목소리 답장에는 누가 말씀하셨는지 이름을 적는다(🎙 박순자님).
+      voiceName: (m.audioUrl ?? '').isNotEmpty && m.senderType == 'user'
+          ? (_elderName.isEmpty ? '어르신' : '$_elderName님')
+          : null,
       deliveredToDevice: m.deliveredToDevice,
       unreadCount: m.unreadCount,
       at: m.createdAt,
@@ -570,7 +582,7 @@ class _CenterPill extends StatelessWidget {
 }
 
 class _MessageRow extends StatelessWidget {
-  const _MessageRow({required this.message});
+  const _MessageRow({super.key, required this.message});
 
   final _ChatMessage message;
 
@@ -595,6 +607,10 @@ class _MessageRow extends StatelessWidget {
       time: message.time,
       mine: message.mine,
       unreadCount: message.unreadCount,
+      voiceName: message.voiceName,
+      trailing: (message.audioUrl ?? '').isEmpty
+          ? null
+          : _VoicePlayButton(url: message.audioUrl!),
       child: Text(
         message.text,
         style: TextStyle(
@@ -618,12 +634,20 @@ class _ChatBubbleShell extends StatelessWidget {
     required this.time,
     required this.mine,
     this.unreadCount = 0,
+    this.voiceName,
+    this.trailing,
     required this.child,
   });
 
   final String sender;
   final String time;
   final bool mine;
+
+  /// 목소리 답장이면 말한 사람 이름. 시간 앞에 🎙 와 함께 적는다.
+  final String? voiceName;
+
+  /// 버블 오른쪽에 붙는 것(목소리 재생 버튼).
+  final Widget? trailing;
 
   /// 이 글을 아직 안 읽은 가족 수. 0 이면 아무것도 그리지 않는다.
   final int unreadCount;
@@ -665,12 +689,26 @@ class _ChatBubbleShell extends StatelessWidget {
               children: [
                 // 내 메시지는 버블 오른쪽에 시간을 따로 그린다. 여기서도 그리면
                 // 같은 시간이 두 번 보인다.
-                if (!mine && (time.isNotEmpty || unreadCount > 0))
+                if (!mine &&
+                    (time.isNotEmpty || unreadCount > 0 || voiceName != null))
                   Padding(
                     padding: const EdgeInsets.only(bottom: 4),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        if (voiceName != null) ...[
+                          const Icon(Icons.mic_none, size: 11, color: _muted),
+                          const SizedBox(width: 2),
+                          Text(
+                            voiceName!,
+                            style: const TextStyle(
+                              fontSize: 9,
+                              color: _muted,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const SizedBox(width: 5),
+                        ],
                         if (time.isNotEmpty)
                           Text(
                             time,
@@ -698,6 +736,10 @@ class _ChatBubbleShell extends StatelessWidget {
               ],
             ),
           ),
+          if (trailing != null) ...[
+            const SizedBox(width: 6),
+            trailing!,
+          ],
           if (mine && (time.isNotEmpty || unreadCount > 0)) ...[
             const SizedBox(width: 6),
             Padding(
@@ -1004,6 +1046,8 @@ class _ChatMessage {
     this.mine = false,
     this.kind = _MessageKind.text,
     this.imageUrl,
+    this.audioUrl,
+    this.voiceName,
     this.deliveredToDevice = false,
     this.unreadCount = 0,
     this.at,
@@ -1019,6 +1063,12 @@ class _ChatMessage {
   final _MessageKind kind;
   final String? imageUrl;
 
+  /// 어르신 답장의 목소리. 있으면 재생 버튼이 붙는다.
+  final String? audioUrl;
+
+  /// 목소리 답장일 때 말풍선 위에 적을 이름(박순자님).
+  final String? voiceName;
+
   /// 인형이 어르신께 읽어드렸는지.
   final bool deliveredToDevice;
 
@@ -1027,4 +1077,89 @@ class _ChatMessage {
 
   /// 보낸 시각. 날짜가 바뀌는 자리에 금을 긋는 데 쓴다.
   final DateTime? at;
+}
+
+/// 재생할 수 있는 주소. 운영(S3)은 서명된 전체 주소를 주지만, 로컬 저장소는
+/// '/uploads/...' 처럼 서버 안 경로만 준다. 그때는 서버 주소를 앞에 붙인다.
+String _playableUrl(String url) =>
+    url.startsWith('/') ? '$kBackendBaseUrl$url' : url;
+
+/// 어르신 답장 목소리를 듣는 둥근 버튼.
+///
+/// 재생 중에는 ⏸ 가 보이고, 누르면 그 자리에서 멈춘다. 다시 누르면 멈춘
+/// 자리부터 이어 듣는다. 끝까지 들으면 처음으로 돌아가 ▶ 로 바뀐다.
+class _VoicePlayButton extends StatefulWidget {
+  const _VoicePlayButton({required this.url});
+
+  final String url;
+
+  @override
+  State<_VoicePlayButton> createState() => _VoicePlayButtonState();
+}
+
+class _VoicePlayButtonState extends State<_VoicePlayButton> {
+  AudioPlayer? _player;
+  StreamSubscription<void>? _completeSubscription;
+  bool _playing = false;
+
+  @override
+  void dispose() {
+    unawaited(_completeSubscription?.cancel());
+    unawaited(_player?.dispose());
+    super.dispose();
+  }
+
+  Future<void> _toggle() async {
+    final player = _player ??= AudioPlayer();
+    _completeSubscription ??= player.onPlayerComplete.listen((_) {
+      if (mounted) setState(() => _playing = false);
+    });
+
+    try {
+      if (_playing) {
+        await player.pause();
+        if (mounted) setState(() => _playing = false);
+        return;
+      }
+      if (player.state == PlayerState.paused) {
+        await player.resume();
+      } else {
+        // 처음이거나 끝까지 들은 뒤. 주소는 목록을 받을 때마다 새로
+        // 서명되므로 누를 때의 것을 쓴다.
+        await player.play(UrlSource(_playableUrl(widget.url)));
+      }
+      if (mounted) setState(() => _playing = true);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _playing = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('목소리를 재생하지 못했어요.')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: _playing ? '목소리 일시정지' : '목소리 듣기',
+      child: GestureDetector(
+        onTap: _toggle,
+        child: Container(
+          width: 30,
+          height: 30,
+          margin: const EdgeInsets.only(bottom: 2),
+          decoration: const BoxDecoration(
+            color: Color(0xFF9E9893),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(
+            _playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+            size: 20,
+            color: Colors.white,
+          ),
+        ),
+      ),
+    );
+  }
 }

@@ -7,6 +7,11 @@
 //   2. 토큰이 바뀌면 다시 등록한다 — 앱을 지웠다 깔거나 데이터를 복원하면 바뀐다.
 //   3. 로그아웃할 때 지운다. 안 지우면 폰을 넘겨받은 사람에게 남의 알림이 간다.
 //
+// 알림은 폰 상단에 팝업으로 내려와야 한다. 그러려면 중요도 '높음' 채널이
+// 있어야 하고(앱이 꺼져 있을 때 FCM 이 이 채널로 띄운다 — AndroidManifest 의
+// default_notification_channel_id), 앱이 떠 있을 때는 FCM 이 아무것도 띄우지
+// 않으므로 여기서 직접 띄운다.
+//
 // 알림함 자체는 서버 DB 에 그대로 쌓이므로, 푸시가 막혀 있어도(권한 거부 등)
 // 앱을 열면 알림을 볼 수 있다. 그래서 여기서 나는 실패는 전부 삼킨다.
 
@@ -14,6 +19,8 @@ import 'dart:async';
 
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/painting.dart' show Color;
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import 'settings_api.dart';
 
@@ -22,10 +29,23 @@ class PushService {
 
   static final SettingsApi _api = SettingsApi();
 
+  /// 서버(fcm.py)가 푸시에 붙이는 채널과 같아야 한다.
+  static const AndroidNotificationChannel _channel = AndroidNotificationChannel(
+    'remory_alerts',
+    '리모리 알림',
+    description: '감정 변화·기기 연결·가족 메시지·리포트 알림',
+    importance: Importance.high,
+  );
+
+  static final FlutterLocalNotificationsPlugin _local =
+      FlutterLocalNotificationsPlugin();
+  static bool _localReady = false;
+
   /// 지금 이 폰에 등록해 둔 토큰. 로그아웃할 때 이걸 지운다.
   static String? _token;
 
   static StreamSubscription<String>? _refreshSub;
+  static StreamSubscription<RemoteMessage>? _messageSub;
 
   /// 새 알림이 도착했다고 알려준다. 앱이 떠 있는 동안 온 푸시는 시스템
   /// 알림으로 뜨지 않으므로, 화면이 이걸 듣고 알림함을 다시 불러온다.
@@ -38,6 +58,7 @@ class PushService {
 
       // 안드로이드 13+ 는 여기서 시스템 권한 창이 뜬다. 거부해도 토큰은 받는다.
       await messaging.requestPermission();
+      await _prepareLocal();
 
       final token = await messaging.getToken();
       if (token != null) await _register(token);
@@ -45,7 +66,10 @@ class PushService {
       // 한 번만 걸어 둔다. 로그아웃했다 다시 로그인해도 중복으로 붙지 않는다.
       _refreshSub ??= messaging.onTokenRefresh.listen(_register);
 
-      FirebaseMessaging.onMessage.listen((_) => arrived.value++);
+      _messageSub ??= FirebaseMessaging.onMessage.listen((message) {
+        arrived.value++;
+        _showOnTop(message);
+      });
     } catch (e) {
       // 권한 거부, 구글 플레이 서비스 없음(에뮬레이터) 등. 앱은 그대로 쓴다.
       debugPrint('푸시를 켜지 못했어요: $e');
@@ -62,6 +86,49 @@ class PushService {
     } catch (_) {
       // 서버에 못 알려도 로그아웃은 그대로 진행한다. 남은 토큰으로 푸시가
       // 가더라도 앱을 열면 로그인 화면이라 내용이 보이지는 않는다.
+    }
+  }
+
+  /// 상단 팝업 채널을 만든다. 이미 있으면 안드로이드가 그대로 둔다.
+  static Future<void> _prepareLocal() async {
+    if (_localReady) return;
+    await _local.initialize(
+      settings: const InitializationSettings(
+        // 상태바 아이콘. 앱 아이콘을 한 가지 색으로 그린 것이다(사진 같은
+        // 앱 아이콘을 쓰면 상태바에서 흰 덩어리로 보인다).
+        android: AndroidInitializationSettings('@drawable/ic_stat_remory'),
+      ),
+    );
+    await _local
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >()
+        ?.createNotificationChannel(_channel);
+    _localReady = true;
+  }
+
+  /// 앱이 떠 있을 때 온 푸시를 폰 상단에 띄운다.
+  static Future<void> _showOnTop(RemoteMessage message) async {
+    final notification = message.notification;
+    if (notification == null || !_localReady) return;
+    try {
+      await _local.show(
+        id: message.hashCode,
+        title: notification.title,
+        body: notification.body,
+        notificationDetails: NotificationDetails(
+          android: AndroidNotificationDetails(
+            _channel.id,
+            _channel.name,
+            channelDescription: _channel.description,
+            importance: Importance.high,
+            priority: Priority.high,
+            color: const Color(0xFF936249),
+          ),
+        ),
+      );
+    } catch (e) {
+      debugPrint('상단 알림을 띄우지 못했어요: $e');
     }
   }
 

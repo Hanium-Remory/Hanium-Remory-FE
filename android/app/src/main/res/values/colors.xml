@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="ic_launcher_background">#E8CBA5</color>
+    <!-- 알림을 펼쳤을 때 아이콘에 입히는 색(앱 갈색) -->
+    <color name="notification_accent">#936249</color>
 </resources>

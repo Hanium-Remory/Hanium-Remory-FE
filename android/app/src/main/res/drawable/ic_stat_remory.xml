@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 상태바·알림용 아이콘. 앱 아이콘(모리 인형)의 얼굴을 한 가지 색으로 그린 것.
+     안드로이드는 상태바 아이콘의 색을 버리고 모양(알파)만 쓰므로, 사진 같은
+     앱 아이콘을 그대로 쓰면 흰 덩어리로 보인다. 색은 알림 쪽에서 입힌다. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- 인형 몸체 -->
+    <path
+        android:pathData="M7,3h10a4,4 0,0 1,4 4v10a4,4 0,0 1,-4 4h-10a4,4 0,0 1,-4 -4v-10a4,4 0,0 1,4 -4z"
+        android:strokeWidth="1.8"
+        android:strokeColor="#FFFFFFFF"
+        android:fillColor="#00000000" />
+    <!-- 웃는 눈 -->
+    <path
+        android:pathData="M7.6,11.4a1.8,1.8 0,0 1,3.6 0M12.8,11.4a1.8,1.8 0,0 1,3.6 0"
+        android:strokeWidth="1.6"
+        android:strokeLineCap="round"
+        android:strokeColor="#FFFFFFFF"
+        android:fillColor="#00000000" />
+    <!-- 입 -->
+    <path
+        android:pathData="M10,15.2q2,1.5 4,0"
+        android:strokeWidth="1.6"
+        android:strokeLineCap="round"
+        android:strokeColor="#FFFFFFFF"
+        android:fillColor="#00000000" />
+</vector>

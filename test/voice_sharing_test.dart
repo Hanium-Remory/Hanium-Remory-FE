@@ -50,4 +50,16 @@ void main() {
     expect(v.ownerName, isNull);
     expect(v.ownerLabel, isEmpty);
   });
+
+  test('목소리는 등록한 본인만 지울 수 있다', () {
+    final mine = _voice(protectorId: 1);
+    expect(mine.canBeDeletedBy(1), isTrue);
+    expect(mine.canBeDeletedBy(2), isFalse);
+    // 내 id 를 아직 모르면 지우지 못하게 둔다.
+    expect(mine.canBeDeletedBy(null), isFalse);
+  });
+
+  test('인형에 든 기본 목소리는 아무도 지울 수 없다', () {
+    expect(_voice(protectorId: null).canBeDeletedBy(1), isFalse);
+  });
 }
